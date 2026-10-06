@@ -1,7 +1,14 @@
 const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
 const SUPABASE_KEY=null;
 const ADMIN_GATEWAY=SUPABASE_URL+"/functions/v1/admin-gateway";
-async function getApiKey(){const r=await fetch("app.js?key="+Date.now(),{cache:"no-store"});const t=await r.text();const k=t.indexOf("SUPABASE_KEY");const eq=t.indexOf("=",k);const qchar=t.charAt(eq+1)==="'"?"'":"\"";const q=t.indexOf(qchar,eq+1);const e=t.indexOf(qchar,q+1);if(k<0||eq<0||q<0||e<0)throw new Error("تعذر قراءة إعدادات الاتصال");return t.slice(q+1,e)}
+async function getApiKey(){
+  const response=await fetch("app.js?cache="+Date.now(),{cache:"no-store"});
+  if(!response.ok)throw new Error("تعذر تحميل إعدادات الاتصال.");
+  const source=await response.text();
+  const match=source.match(/(?:const|let|var)\\s+SUPABASE_KEY\\s*=\\s*["']([^"']+)["']/);
+  if(!match)throw new Error("تعذر العثور على مفتاح الاتصال.");
+  return match[1];
+}
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
 let profile=null,settings=null,currentView="orders",lockTimer=null;
 const $=s=>document.querySelector(s);
@@ -11,13 +18,28 @@ function label(s){return({new:"جديد 🔔",confirmed:"تم التأكيد",pr
 function fmt(d){return d?new Date(d).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"—"}
 
 async function gateway(body){
-  if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح"}};
+  if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح."}};
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),8000);
   try{
-    const r=await fetch(ADMIN_GATEWAY,{method:"POST",headers:{"apikey":await getApiKey(),"Content-Type":"application/json"},body:JSON.stringify({...body,token:ADMIN_TOKEN}),cache:"no-store"});
-    let j=null;try{j=await r.json()}catch(_){}
-    if(!r.ok)return{data:null,error:{message:j?.error||j?.reason||"تعذر الاتصال بخادم الإدارة",status:r.status}};
-    return{data:j?.data??j?.ok??null,error:j?.error?{message:j.error}:null};
-  }catch(e){return{data:null,error:{message:e?.message||"فشل الاتصال"}}}
+    const apiKey=await getApiKey();
+    const response=await fetch(ADMIN_GATEWAY,{
+      method:"POST",
+      headers:{"apikey":apiKey,"Content-Type":"application/json"},
+      body:JSON.stringify({...body,token:ADMIN_TOKEN}),
+      cache:"no-store",
+      signal:controller.signal
+    });
+    let result=null;
+    try{result=await response.json()}catch(_){}
+    if(!response.ok)return{data:null,error:{message:result?.error||result?.reason||("تعذر الاتصال بخادم الإدارة ("+response.status+")."),status:response.status}};
+    return{data:result?.data??result?.ok??null,error:result?.error?{message:result.error}:null};
+  }catch(error){
+    const message=error?.name==="AbortError"?"انتهت مهلة الاتصال بخادم الإدارة.":"تعذر الاتصال بخادم الإدارة: "+(error?.message||"خطأ غير معروف.");
+    return{data:null,error:{message}};
+  }finally{
+    clearTimeout(timer);
+  }
 }
 
 class AdminQuery{
@@ -54,15 +76,37 @@ function showMessage(title,text){
   $("#loginTitle").textContent=title;$("#loginText").textContent=text;
 }
 async function boot(){
-  if(!ADMIN_TOKEN){showMessage("رابط الإدارة غير صالح","افتح صفحة الإدارة من رابط المدير الخاص فقط.");return}
-  const ok=await lock("acquire");
-  if(!ok){showMessage("الإدارة مفتوحة بالفعل","جهاز آخر يستخدم صفحة الإدارة الآن. اقفل الصفحة هناك أو انتظر حتى تنتهي الجلسة.");return}
-  lockTimer=setInterval(async()=>{
-    const alive=await lock("heartbeat");
-    if(!alive){clearInterval(lockTimer);lockTimer=null;showMessage("تم إيقاف الجلسة","تم فتح الإدارة من جهاز آخر. هذه الصفحة لم تعد تملك القفل.");}
-  },7000);
-  window.addEventListener("pagehide",()=>{try{fetch(ADMIN_GATEWAY,{method:"POST",keepalive:true,headers:{"apikey":await getApiKey(),"Content-Type":"application/json"},body:JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"})})}catch(_){}});
-  await enter();
+  try{
+    if(!ADMIN_TOKEN){
+      showMessage("رابط الإدارة غير صالح","يجب فتح صفحة الإدارة باستخدام رابط المدير الخاص.");
+      return;
+    }
+    const result=await gateway({op:"lock",action:"acquire"});
+    if(result.error){
+      showMessage("تعذر فتح الإدارة",result.error.message);
+      return;
+    }
+    if(!result.data){
+      showMessage("الإدارة قيد الاستخدام","هناك جهاز آخر يستخدم لوحة الإدارة حاليًا.");
+      return;
+    }
+    lockTimer=setInterval(async()=>{
+      const heartbeat=await lock("heartbeat");
+      if(!heartbeat){
+        clearInterval(lockTimer);
+        lockTimer=null;
+        showMessage("انتهت جلسة الإدارة","تم فقدان جلسة الإدارة، ولذلك أُوقفت هذه الصفحة.");
+      }
+    },7000);
+    window.addEventListener("pagehide",()=>{
+      try{
+        navigator.sendBeacon(ADMIN_GATEWAY,JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"}));
+      }catch(_){}
+    });
+    await enter();
+  }catch(error){
+    showMessage("تعذر تشغيل لوحة الإدارة","حدث خطأ أثناء تشغيل الصفحة: "+(error?.message||"خطأ غير معروف."));
+  }
 }
 async function enter(){
   const r=await db.from("staff_profiles").select("*").eq("active",true).eq("role","owner").order("created_at",{ascending:true}).limit(1).maybeSingle();
