@@ -80,8 +80,8 @@ async function init(){
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
 function renderTables(){
- $("#tables").innerHTML=state.tables.map(function(t){return '<button class="table-btn '+(state.table&&state.table.id===t.id?"active":"")+'" data-table="'+t.id+'">طاولة '+esc(t.table_number)+"</button>"}).join("");
- document.querySelectorAll("[data-table]").forEach(function(b){b.onclick=function(){state.table=state.tables.find(function(t){return t.id===b.dataset.table});renderTables();$("#tableBadge").textContent="طاولة "+state.table.table_number;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"})}});
+ $("#tables").innerHTML=state.tables.map(function(t){return '<button type="button" class="table-btn '+(state.table&&state.table.id===t.id?"active":"")+'" data-table="'+t.id+'">طاولة '+esc(t.table_number)+"</button>"}).join("");
+ $("#tables").onclick=function(e){const b=e.target.closest("[data-table]");if(!b)return;e.preventDefault();e.stopPropagation();state.table=state.tables.find(function(t){return t.id===b.dataset.table});if(!state.table)return;renderTables();$("#tableBadge").textContent="طاولة "+state.table.table_number;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"})};
 }
 function renderCategories(){
  let html='<button class="chip '+(!state.category?"active":"")+'" data-cat="">الكل</button>';
