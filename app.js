@@ -126,10 +126,20 @@ function openProduct(id){
 function closeModal(id){$("#"+id).classList.add("hidden")}
 function updateCart(){
  $("#cartCount").textContent=state.cart.reduce(function(s,i){return s+i.qty},0);
- const subtotal=state.cart.reduce(function(s,i){return s+i.unit*i.qty},0),tax=subtotal*Number(state.settings?.tax_percent||0)/100,service=subtotal*Number(state.settings?.service_percent||0)/100;
+ const subtotal=state.cart.reduce(function(s,i){return s+i.unit*i.qty},0);
+ const tax=subtotal*Number(state.settings?.tax_percent||0)/100;
+ const service=subtotal*Number(state.settings?.service_percent||0)/100;
  $("#subtotal").textContent=money(subtotal);$("#tax").textContent=money(tax);$("#service").textContent=money(service);$("#total").textContent=money(subtotal+tax+service);
- $("#cartItems").innerHTML=state.cart.length?state.cart.map(function(i){return '<div class="cart-item"><div class="cart-item-top"><div><h4>'+esc(i.product.name)+'</h4><small>'+esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")+'</small></div><b>'+money(i.unit*i.qty)+'</b></div><div class="qty"><button data-minus="'+i.key+'">−</button><b>'+i.qty+'</b><button data-plus="'+i.key+'">+</button><button data-remove="'+i.key+'" style="margin-right:auto;color:#e88989">حذف</button></div></div>"}).join(""):'<div class="empty">السلة فارغة.<br>اختار حاجة تحبها من المنيو ☕</div>';
- document.querySelectorAll("[data-minus]").forEach(function(b){b.onclick=function(){changeQty(b.dataset.minus,-1)}});document.querySelectorAll("[data-plus]").forEach(function(b){b.onclick=function(){changeQty(b.dataset.plus,1)}});document.querySelectorAll("[data-remove]").forEach(function(b){b.onclick=function(){state.cart=state.cart.filter(function(x){return x.key!==b.dataset.remove});updateCart()}});
+ $("#cartItems").innerHTML=state.cart.length?state.cart.map(function(i){
+  return \`
+   <div class="cart-item">
+    <div class="cart-item-top"><div><h4>${esc(i.product.name)}</h4><small>${esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")}</small></div><b>${money(i.unit*i.qty)}</b></div>
+    <div class="qty"><button data-minus="${i.key}">−</button><b>${i.qty}</b><button data-plus="${i.key}">+</button><button data-remove="${i.key}" style="margin-right:auto;color:#e88989">حذف</button></div>
+   </div>`;
+ }).join(""):'<div class="empty">السلة فارغة.<br>اختار حاجة تحبها من المنيو ☕</div>';
+ document.querySelectorAll("[data-minus]").forEach(function(b){b.onclick=function(){changeQty(b.dataset.minus,-1)}});
+ document.querySelectorAll("[data-plus]").forEach(function(b){b.onclick=function(){changeQty(b.dataset.plus,1)}});
+ document.querySelectorAll("[data-remove]").forEach(function(b){b.onclick=function(){state.cart=state.cart.filter(function(x){return x.key!==b.dataset.remove});updateCart()}});
 }
 function changeQty(key,d){const i=state.cart.find(function(x){return x.key===key});if(!i)return;i.qty+=d;if(i.qty<1)state.cart=state.cart.filter(function(x){return x!==i});updateCart()}
 function openCart(){$("#cartDrawer").classList.add("open");$("#drawerBackdrop").classList.add("show")}
