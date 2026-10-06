@@ -43,7 +43,14 @@ const db={
  },
  functions:{async invoke(name,{body}={}){try{const res=await fetch(SUPABASE_URL+"/functions/v1/"+name,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json().catch(()=>null);return res.ok?{data,error:null}:{data:null,error:{message:data?.error||"Function request failed"}}}catch(error){return {data:null,error}}}}
 };
-const state={settings:null,tables:[],categories:[],products:[],groups:[],modifiers:[],links:[],table:null,category:null,cart:[],trackingToken:null,trackingTimer:null};
+const state={settings:null,tables:[],categories:[],products:[],groups:[],modifiers:[],links:[],table:null,category:null,cart:[],trackingToken:null,trackingTimer:null,trackingTokens:[]};
+function loadTrackingTokens(){try{const x=JSON.parse(localStorage.getItem("as_cafe_order_tokens")||"[]");state.trackingTokens=Array.isArray(x)?x.slice(0,20):[]}catch(e){state.trackingTokens=[]}}
+function saveTrackingToken(token,orderNumber){if(!token)return;state.trackingTokens=[{token:token,order_number:orderNumber||null},...state.trackingTokens.filter(function(x){return x.token!==token})].slice(0,20);try{localStorage.setItem("as_cafe_order_tokens",JSON.stringify(state.trackingTokens))}catch(e){}renderTrackingBadge()}
+function renderTrackingBadge(){const b=$("#ordersCount");if(b)b.textContent=state.trackingTokens.length}
+async function fetchTrackedOrder(entry){const r=await db.functions.invoke("customer-gateway",{body:{action:"get_order",token:entry.token}});return r.error||!r.data?.order?null:r.data.order}
+async function renderMyOrders(){const box=$("#myOrdersList");if(!box)return;box.innerHTML='<div class="empty">جاري تحميل طلباتك…</div>';const rows=await Promise.all(state.trackingTokens.map(fetchTrackedOrder));const valid=rows.map(function(o,n){return {order:o,entry:state.trackingTokens[n]}}).filter(function(x){return x.order});if(!valid.length){box.innerHTML='<div class="empty">مفيش طلبات محفوظة على الجهاز لحد دلوقتي.<br>بعد ما تعمل طلب هتلاقيه هنا تلقائيًا.</div>';return}box.innerHTML=valid.map(function(x){const o=x.order;return '<article class="tracked-order"><div class="tracked-order-head"><strong>#'+esc(o.order_number||x.entry.order_number||"----")+'</strong><span>طاولة '+esc(o.table_number||"—")+'</span></div><div class="tracked-status">'+esc(statusLabel(o.status))+'</div><div class="tracked-meta"><span>وقت الطلب<br><b>'+new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"})+'</b></span><span>المتوقع<br><b>'+(o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده")+'</b></span></div><button class="track-open" data-token="'+esc(x.entry.token)+'">متابعة الطلب</button></article>'}).join("");box.querySelectorAll("[data-token]").forEach(function(b){b.onclick=function(){state.trackingToken=b.dataset.token;closeModal("myOrdersModal");$("#successModal").classList.remove("hidden");refreshCustomerOrder()}})}
+async function refreshMyOrders(){if(!$("#myOrdersModal")||$("#myOrdersModal").classList.contains("hidden"))return;await renderMyOrders()}
+function openMyOrders(){renderMyOrders();$("#myOrdersModal").classList.remove("hidden");if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=setInterval(refreshMyOrders,4000)}
 const $=s=>document.querySelector(s);
 const money=n=>Number(n||0).toFixed(2)+" EGP";
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2400)}
@@ -60,6 +67,7 @@ async function loadQuery(label,query){
  }catch(error){console.error("A&S load exception:",label,error);return {label:label,data:null,error:error}}
 }
 async function init(){
+ loadTrackingTokens();renderTrackingBadge();
 
  const menuResult=await loadQuery("المنيو",db.functions.invoke("customer-gateway",{body:{action:"get_menu"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data||null,error:null}}));
  const tableResult=await loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}}));
@@ -192,6 +200,7 @@ async function sendOrder(){
  closeCart();
  $("#successNumber").textContent="#"+created.data.order.order_number; renderCustomerInvoice(created.data.order, state.cart);
  state.trackingToken=created.data.tracking_token;
+ saveTrackingToken(created.data.tracking_token,created.data.order.order_number);
  $("#successModal").classList.remove("hidden");
  state.cart=[];$("#orderNote").value="";$("#customerName").value="";$("#customerPhone").value="";
  updateCart();btn.disabled=false;btn.textContent="إرسال الطلب →";
@@ -199,4 +208,4 @@ async function sendOrder(){
  if(state.trackingTimer)clearInterval(state.trackingTimer);
  state.trackingTimer=setInterval(refreshCustomerOrder,4000);
 }
-$("#cartBtn").onclick=openCart;$("#closeCart").onclick=closeCart;$("#drawerBackdrop").onclick=closeCart;$("#sendOrder").onclick=sendOrder;$("#newOrder").onclick=function(){closeModal("successModal");state.trackingToken=null;if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=null;};$("#closeProduct").onclick=function(){closeModal("productModal")};init();
+$("#cartBtn").onclick=openCart;$("#closeCart").onclick=closeCart;$("#drawerBackdrop").onclick=closeCart;$("#sendOrder").onclick=sendOrder;$("#newOrder").onclick=function(){closeModal("successModal");state.trackingToken=null;if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=null;};$("#ordersBtn").onclick=openMyOrders;$("#closeMyOrders").onclick=function(){closeModal("myOrdersModal");if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=null;};$("#closeProduct").onclick=function(){closeModal("productModal")};init();
