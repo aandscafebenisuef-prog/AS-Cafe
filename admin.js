@@ -1,115 +1,128 @@
-const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co",SUPABASE_KEY="sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8";
-const db=window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
-let profile=null,settings=null,currentView="orders";const $=s=>document.querySelector(s);const money=n=>Number(n||0).toFixed(2)+" EGP";
-function toast(m){const e=$("#toast");e.textContent=m;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
+const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
+const SUPABASE_KEY="sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8";
+const ADMIN_GATEWAY=SUPABASE_URL+"/functions/v1/admin-gateway";
+const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
+let profile=null,settings=null,currentView="orders",lockTimer=null;
+const $=s=>document.querySelector(s);
+const money=n=>Number(n||0).toFixed(2)+" EGP";
+function toast(m){const e=$("#toast");if(!e)return;e.textContent=m;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
 function label(s){return({new:"جديد 🔔",confirmed:"تم التأكيد",preparing:"قيد التحضير",ready:"جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"ملغي"})[s]||s}
 function fmt(d){return d?new Date(d).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"—"}
-async function boot(){try{if(!db){showLogin();toast("تعذر تحميل مكتبة الاتصال. أعد تحميل الصفحة.");return}const setup=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();if(setup.error){console.error("setup check failed",setup.error);showLogin();toast("تعذر الاتصال ببيانات الإعداد. حاول تسجيل الدخول مرة أخرى.");}else if(setup.data?.setup_completed){showLogin()}else{showRegister()}const ses=await db.auth.getSession();if(ses.data?.session)await enter();db.auth.onAuthStateChange(function(_e,s){if(s)enter()})}catch(err){console.error("boot failed",err);showLogin();toast("حدث خطأ في تحميل صفحة الإدارة. حاول مرة أخرى.")}}
-function showLogin(){$("#setupBox").classList.add("hidden");$("#loginBox").classList.remove("hidden");$("#tabLogin")?.classList.add("active");$("#tabRegister")?.classList.remove("active")}function showRegister(){$("#loginBox").classList.add("hidden");$("#setupBox").classList.remove("hidden");$("#tabLogin")?.classList.remove("active");$("#tabRegister")?.classList.add("active")}
-async function finalizeInvitedEmployee(u){const email=(u.email||"").toLowerCase();const inv=await db.from("staff_invitations").select("id,email").eq("active",true).is("accepted_at",null).ilike("email",email).maybeSingle();if(!inv.data)return null;const name=(u.user_metadata&&u.user_metadata.full_name)||"موظف";const p=await db.from("staff_profiles").insert({user_id:u.id,full_name:name,role:"cashier",active:true,invited_email:email});if(p.error)return p.error;await db.from("staff_invitations").update({active:false,accepted_at:new Date().toISOString()}).eq("id",inv.data.id);return null}
-async function enter(){const u=(await db.auth.getUser()).data.user;if(!u)return;let r=null;for(let attempt=0;attempt<3;attempt++){r=await db.from("staff_profiles").select("*").eq("user_id",u.id).eq("active",true).maybeSingle();if(r.data)break;await new Promise(resolve=>setTimeout(resolve,350))}if(!r?.data){const e=await finalizeInvitedEmployee(u);if(!e){for(let attempt=0;attempt<3;attempt++){r=await db.from("staff_profiles").select("*").eq("user_id",u.id).eq("active",true).maybeSingle();if(r.data)break;await new Promise(resolve=>setTimeout(resolve,350))}}}if(r?.error||!r?.data){toast(r?.error?.message?"تعذر قراءة صلاحية المدير: "+r.error.message:"الحساب ليس له دعوة أو صلاحية إدارة.");return}profile=r.data;const s=await db.from("cafe_settings").select("*").limit(1).maybeSingle();settings=s.data;$("#staffName").textContent=profile.full_name||"Staff";$("#roleName").textContent=profile.role==="owner"?"OWNER":"STAFF";$("#staffNav").classList.toggle("hidden",profile.role!=="owner");$("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");renderView()}
-async function renderView(){const t={orders:"الطلبات",products:"المنتجات",categories:"الأقسام",tables:"الطاولات",settings:"الإعدادات"};$("#viewTitle").textContent=t[currentView];document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===currentView));if(currentView==="orders")return orders();if(currentView==="products")return products();if(currentView==="categories")return categories();if(currentView==="tables")return tables();if(currentView==="staff")return staffView();return settingsView()}
+
+async function gateway(body){
+  if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح"}};
+  try{
+    const r=await fetch(ADMIN_GATEWAY,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({...body,token:ADMIN_TOKEN}),cache:"no-store"});
+    let j=null;try{j=await r.json()}catch(_){}
+    if(!r.ok)return{data:null,error:{message:j?.error||j?.reason||"تعذر الاتصال بخادم الإدارة",status:r.status}};
+    return{data:j?.data??j?.ok??null,error:j?.error?{message:j.error}:null};
+  }catch(e){return{data:null,error:{message:e?.message||"فشل الاتصال"}}}
+}
+
+class AdminQuery{
+  constructor(table){this.body={table,action:"select",columns:"*",filters:[],orders:[]}}
+  select(columns="*"){this.body.action="select";this.body.columns=columns;return this}
+  insert(data){this.body.action="insert";this.body.data=data;return this}
+  update(data){this.body.action="update";this.body.data=data;return this}
+  upsert(data,options={}){this.body.action="upsert";this.body.data=data;this.body.options=options;return this}
+  delete(){this.body.action="delete";return this}
+  eq(column,value){this.body.filters.push({op:"eq",column,value});return this}
+  neq(column,value){this.body.filters.push({op:"neq",column,value});return this}
+  ilike(column,value){this.body.filters.push({op:"ilike",column,value});return this}
+  is(column,value){this.body.filters.push({op:"is",column,value});return this}
+  in(column,value){this.body.filters.push({op:"in",column,value});return this}
+  order(column,opts={}){this.body.orders.push({column,ascending:opts.ascending!==false});return this}
+  limit(n){this.body.limit=n;return this}
+  maybeSingle(){this.body.maybeSingle=true;return this}
+  then(resolve,reject){return gateway(this.body).then(resolve,reject)}
+  catch(reject){return gateway(this.body).catch(reject)}
+}
+const db={
+  from(table){return new AdminQuery(table)},
+  channel(){return{on(){return this},subscribe(){return this},unsubscribe(){return Promise.resolve()}}},
+  functions:{invoke:async(name,opts)=>({data:null,error:{message:"هذه العملية غير متاحة في نظام الإدارة الجديد"}})}
+};
+
+async function lock(action){
+  const r=await gateway({op:"lock",action});
+  if(action==="acquire"||action==="heartbeat")return !!r.data;
+  return !!r.data;
+}
+function showMessage(title,text){
+  $("#loginView").classList.remove("hidden");$("#appView").classList.add("hidden");
+  $("#loginTitle").textContent=title;$("#loginText").textContent=text;
+}
+async function boot(){
+  if(!ADMIN_TOKEN){showMessage("رابط الإدارة غير صالح","افتح صفحة الإدارة من رابط المدير الخاص فقط.");return}
+  const ok=await lock("acquire");
+  if(!ok){showMessage("الإدارة مفتوحة بالفعل","جهاز آخر يستخدم صفحة الإدارة الآن. اقفل الصفحة هناك أو انتظر حتى تنتهي الجلسة.");return}
+  lockTimer=setInterval(async()=>{
+    const alive=await lock("heartbeat");
+    if(!alive){clearInterval(lockTimer);lockTimer=null;showMessage("تم إيقاف الجلسة","تم فتح الإدارة من جهاز آخر. هذه الصفحة لم تعد تملك القفل.");}
+  },7000);
+  window.addEventListener("pagehide",()=>{try{fetch(ADMIN_GATEWAY,{method:"POST",keepalive:true,headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"})})}catch(_){}});
+  await enter();
+}
+async function enter(){
+  const r=await db.from("staff_profiles").select("*").eq("active",true).eq("role","owner").order("created_at",{ascending:true}).limit(1).maybeSingle();
+  profile=r.data||{user_id:null,full_name:"مدير A&S",role:"owner",active:true};
+  if(r.error){toast("تعذر قراءة بيانات المدير: "+r.error.message);return}
+  const s=await db.from("cafe_settings").select("*").limit(1).maybeSingle();
+  settings=s.data||null;
+  $("#staffName").textContent=profile.full_name||"مدير A&S";
+  $("#roleName").textContent="OWNER";
+  $("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");renderView();
+}
+async function renderView(){
+  const t={orders:"الطلبات",products:"المنتجات",categories:"الأقسام",tables:"الطاولات",settings:"الإعدادات"};
+  $("#viewTitle").textContent=t[currentView]||"الإدارة";
+  document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===currentView));
+  if(currentView==="orders")return orders();
+  if(currentView==="products")return products();
+  if(currentView==="categories")return categories();
+  if(currentView==="tables")return tables();
+  return settingsView();
+}
 async function orders(){
  const r=await db.from("orders").select("*,cafe_tables(table_number)").order("created_at",{ascending:false}).limit(100);
- if(r.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل الطلبات: '+(r.error.message||"")+'</div>';
- const rows=r.data||[];
- const orderIds=rows.map(o=>o.id).filter(Boolean);
- let items=[],mods=[];
+ if(r.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل الطلبات: '+(r.error.message||"")+"</div>";
+ const rows=r.data||[],orderIds=rows.map(o=>o.id).filter(Boolean);let items=[],mods=[];
  if(orderIds.length){
   const ir=await db.from("order_items").select("id,order_id,product_name,unit_price,quantity,line_total,notes,created_at").in("order_id",orderIds).order("created_at",{ascending:true});
-  if(ir.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل تفاصيل المنتجات: '+(ir.error.message||"")+'</div>';
-  items=ir.data||[];
-  const itemIds=items.map(i=>i.id).filter(Boolean);
-  if(itemIds.length){
-   const mr=await db.from("order_item_modifiers").select("order_item_id,modifier_name,price_delta").in("order_item_id",itemIds);
-   if(mr.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل إضافات المنتجات: '+(mr.error.message||"")+'</div>';
-   mods=mr.data||[];
-  }
+  if(ir.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل تفاصيل المنتجات: '+ir.error.message+"</div>";
+  items=ir.data||[];const itemIds=items.map(i=>i.id).filter(Boolean);
+  if(itemIds.length){const mr=await db.from("order_item_modifiers").select("order_item_id,modifier_name,price_delta").in("order_item_id",itemIds);if(mr.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل إضافات المنتجات: '+mr.error.message+"</div>";mods=mr.data||[]}
  }
- const byOrder=new Map();
- items.forEach(i=>{if(!byOrder.has(i.order_id))byOrder.set(i.order_id,[]);byOrder.get(i.order_id).push(i)});
- const modsByItem=new Map();
- mods.forEach(m=>{if(!modsByItem.has(m.order_item_id))modsByItem.set(m.order_item_id,[]);modsByItem.get(m.order_item_id).push(m)});
- const open=rows.filter(x=>x.status!=="completed"&&x.status!=="cancelled");
- const rev=rows.filter(x=>x.status!=="cancelled").reduce((s,x)=>s+Number(x.total||0),0);
+ const byOrder=new Map();items.forEach(i=>{if(!byOrder.has(i.order_id))byOrder.set(i.order_id,[]);byOrder.get(i.order_id).push(i)});
+ const modsByItem=new Map();mods.forEach(m=>{if(!modsByItem.has(m.order_item_id))modsByItem.set(m.order_item_id,[]);modsByItem.get(m.order_item_id).push(m)});
+ const open=rows.filter(x=>x.status!=="completed"&&x.status!=="cancelled"),rev=rows.filter(x=>x.status!=="cancelled").reduce((s,x)=>s+Number(x.total||0),0);
  let html='<div class="stats"><div class="stat"><small>إجمالي الطلبات</small><b>'+rows.length+'</b></div><div class="stat"><small>طلبات مفتوحة</small><b>'+open.length+'</b></div><div class="stat"><small>جاهزة</small><b>'+rows.filter(x=>x.status==="ready").length+'</b></div><div class="stat"><small>الإجمالي</small><b>'+money(rev)+'</b></div></div><div class="orders">';
  html+=rows.length?rows.map(o=>{
   const orderItems=byOrder.get(o.id)||[];
   const itemsHtml=orderItems.length?orderItems.map(i=>{
-   const itemMods=(modsByItem.get(i.id)||[]).map(m=>'<span class="invoice-mod">'+String(m.modifier_name||"")+(Number(m.price_delta)?' · +'+money(m.price_delta):'')+'</span>').join('');
-   const note=i.notes?'<div class="invoice-note">ملاحظة: '+String(i.notes)+'</div>':'';
-   return '<div class="item-row invoice-item"><div><strong>'+Number(i.quantity||0)+' × '+String(i.product_name||"منتج")+'</strong><div class="invoice-sub">'+money(i.unit_price)+' للوحدة '+itemMods+'</div>'+note+'</div><b>'+money(i.line_total)+'</b></div>';
-  }).join(''):'<div class="invoice-note">لا توجد تفاصيل منتجات محفوظة لهذا الطلب.</div>';
-  const opts=["new","confirmed","preparing","ready","served","completed","cancelled"].map(s=>'<option value="'+s+'" '+(s===o.status?"selected":"")+'>'+label(s)+'</option>').join("");
-  return '<article class="order-card"><div class="order-top"><div><div class="order-no">#'+o.order_number+'</div><span class="table-tag">طاولة '+(o.cafe_tables?o.cafe_tables.table_number:"—")+'</span></div><span class="price">'+money(o.total)+'</span></div><div class="order-meta"><span>📅 '+fmt(o.created_at)+'</span><span>👤 الزبون: '+(o.customer_name||"—")+(o.customer_phone?" · "+o.customer_phone:"")+'</span><span>👤 مسؤول التجهيز: '+(o.assigned_staff_name||"لم يُسند بعد")+(o.assigned_at?" · "+fmt(o.assigned_at):"")+'</span></div><div class="items"><div class="invoice-title">تفاصيل الفاتورة</div>'+itemsHtml+'<div class="invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(o.subtotal)+'</b></div><div><span>الضريبة ('+Number(o.tax_percent||0)+'%)</span><b>'+money(o.tax_amount)+'</b></div><div><span>الخدمة ('+Number(o.service_percent||0)+'%)</span><b>'+money(o.service_amount)+'</b></div><div class="invoice-total"><span>الإجمالي</span><strong>'+money(o.total)+'</strong></div></div>'+(o.customer_note?'<div class="invoice-note order-note">ملاحظة الطلب: '+o.customer_note+'</div>':'')+'</div><div class="status-row"><select class="status-select" data-status="'+o.id+'">'+opts+'</select><button class="btn-small" data-eta="'+o.id+'">⏱ '+(o.estimated_ready_at?"تعديل الوقت":"تحديد وقت تقديري")+'</button></div><div class="eta-line">'+(o.estimated_ready_at?"موعد متوقع: <b>"+fmt(o.estimated_ready_at)+"</b>":"يمكن ترك الوقت فارغًا.")+'</div></article>';
+   const itemMods=(modsByItem.get(i.id)||[]).map(m=>'<span class="invoice-mod">'+String(m.modifier_name||"")+(Number(m.price_delta)?' · +'+money(m.price_delta):"")+"</span>").join("");
+   const note=i.notes?'<div class="invoice-note">ملاحظة: '+String(i.notes)+"</div>":"";
+   return '<div class="item-row invoice-item"><div><strong>'+Number(i.quantity||0)+" × "+String(i.product_name||"منتج")+'</strong><div class="invoice-sub">'+money(i.unit_price)+" للوحدة "+itemMods+"</div>"+note+'</div><b>'+money(i.line_total)+"</b></div>";
+  }).join(""):'<div class="invoice-note">لا توجد تفاصيل منتجات محفوظة لهذا الطلب.</div>';
+  const opts=["new","confirmed","preparing","ready","served","completed","cancelled"].map(s=>'<option value="'+s+'" '+(s===o.status?"selected":"")+'>'+label(s)+"</option>").join("");
+  return '<article class="order-card"><div class="order-top"><div><div class="order-no">#'+o.order_number+'</div><span class="table-tag">طاولة '+(o.cafe_tables?o.cafe_tables.table_number:"—")+'</span></div><span class="price">'+money(o.total)+'</span></div><div class="order-meta"><span>📅 '+fmt(o.created_at)+'</span><span>👤 الزبون: '+(o.customer_name||"—")+(o.customer_phone?" · "+o.customer_phone:"")+'</span></div><div class="items"><div class="invoice-title">تفاصيل الفاتورة</div>'+itemsHtml+'<div class="invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(o.subtotal)+'</b></div><div><span>الضريبة ('+Number(o.tax_percent||0)+"%)</span><b>"+money(o.tax_amount)+'</b></div><div><span>الخدمة ('+Number(o.service_percent||0)+"%)</span><b>"+money(o.service_amount)+'</b></div><div class="invoice-total"><span>الإجمالي</span><strong>'+money(o.total)+'</strong></div></div>'+(o.customer_note?'<div class="invoice-note order-note">ملاحظة الطلب: '+o.customer_note+"</div>":"")+'</div><div class="status-row"><select class="status-select" data-status="'+o.id+'">'+opts+'</select><button class="btn-small" data-eta="'+o.id+'">⏱ '+(o.estimated_ready_at?"تعديل الوقت":"تحديد وقت تقديري")+'</button></div><div class="eta-line">'+(o.estimated_ready_at?"موعد متوقع: <b>"+fmt(o.estimated_ready_at)+"</b>":"يمكن ترك الوقت فارغًا.")+"</div></article>";
  }).join(""):'<div class="notice">لا توجد طلبات حتى الآن.</div>';
  $("#view").innerHTML=html+"</div>";
- document.querySelectorAll("[data-status]").forEach(s=>s.onchange=async()=>{
-  const patch={status:s.value,updated_at:new Date().toISOString()};
-  const rr=await db.from("orders").update(patch).eq("id",s.dataset.status);
-  if(rr.error)toast("تعذر تحديث الحالة");else orders();
- });
- document.querySelectorAll("[data-eta]").forEach(b=>b.onclick=async()=>{
-  const o=rows.find(x=>x.id===b.dataset.eta),current=o?.estimated_ready_at?new Date(o.estimated_ready_at).toISOString().slice(0,16):"";
-  const value=prompt("اكتب الموعد المتوقع بصيغة YYYY-MM-DD HH:MM\\nاتركه فارغًا لإزالة الموعد:",current.replace("T"," "));
-  if(value===null)return;
-  let iso=null;
-  if(value.trim()){const d=new Date(value.trim().replace(" ","T"));if(isNaN(d.getTime()))return toast("صيغة الوقت غير صحيحة");iso=d.toISOString()}
-  const patch={estimated_ready_at:iso,updated_at:new Date().toISOString()};
-  const rr=await db.from("orders").update(patch).eq("id",b.dataset.eta);
-  if(rr.error)toast("تعذر حفظ الموعد");else orders();
- });
+ document.querySelectorAll("[data-status]").forEach(s=>s.onchange=async()=>{const rr=await db.from("orders").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.status);if(rr.error)toast("تعذر تحديث الحالة: "+rr.error.message);else orders()});
+ document.querySelectorAll("[data-eta]").forEach(b=>b.onclick=async()=>{const o=rows.find(x=>x.id===b.dataset.eta),current=o?.estimated_ready_at?new Date(o.estimated_ready_at).toISOString().slice(0,16):"",value=prompt("اكتب الموعد المتوقع بصيغة YYYY-MM-DD HH:MM\nاتركه فارغًا لإزالة الموعد:",current.replace("T"," "));if(value===null)return;let iso=null;if(value.trim()){const d=new Date(value.trim().replace(" ","T"));if(isNaN(d.getTime()))return toast("صيغة الوقت غير صحيحة");iso=d.toISOString()}const rr=await db.from("orders").update({estimated_ready_at:iso,updated_at:new Date().toISOString()}).eq("id",b.dataset.eta);if(rr.error)toast("تعذر حفظ الموعد");else orders()});
 }
-async function products(){const r=await Promise.all([db.from("products").select("*,categories(name)").order("sort_order"),db.from("categories").select("id,name").eq("active",true).order("sort_order")]),rows=r[0].data||[],cats=r[1].data||[];let html='<div class="toolbar"><button class="primary-btn" id="newProduct">+ إضافة منتج</button><input id="productSearch" placeholder="بحث…"></div><div class="table-wrap"><table class="data-table"><thead><tr><th>المنتج</th><th>القسم</th><th>السعر</th><th>الحالة</th><th>الملاحظات</th><th>إجراءات</th></tr></thead><tbody>';html+=rows.map(x=>'<tr><td>'+x.name+'</td><td>'+(x.categories?x.categories.name:"—")+'</td><td class="price">'+money(x.price)+'</td><td>'+(x.active?"نشط":"مخفي")+'</td><td>'+(x.notes_enabled?"مفعلة":"مقفولة")+'</td><td><button class="btn-small" data-edit-product="'+x.id+'">تعديل</button> <button class="btn-small" data-toggle="'+x.id+'" data-active="'+x.active+'">'+(x.active?"إخفاء":"تفعيل")+'</button> <button class="btn-small" data-notes-toggle="'+x.id+'" data-notes-enabled="'+x.notes_enabled+'">'+(x.notes_enabled?"إيقاف الملاحظات":"تفعيل الملاحظات")+'</button></td></tr>').join("")+"</tbody></table></div>";$("#view").innerHTML=html;$("#newProduct").onclick=()=>productForm(cats);$("#productSearch").oninput=e=>document.querySelectorAll("tbody tr").forEach(r=>r.style.display=r.textContent.includes(e.target.value)?"":"none");document.querySelectorAll("[data-edit-product]").forEach(b=>b.onclick=()=>productForm(cats,rows.find(x=>x.id===b.dataset.editProduct)));document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({active:b.dataset.active!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.toggle);if(r.error)return toast("تعذر تغيير حالة المنتج");products()});document.querySelectorAll("[data-notes-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({notes_enabled:b.dataset.notesEnabled!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.notesToggle);if(r.error)return toast("تعذر تغيير إعداد الملاحظات");products()})}
-function productForm(cats,item){let opts=cats.map(c=>'<option value="'+c.id+'" '+(item&&item.category_id===c.id?"selected":"")+'>'+c.name+"</option>").join("");$("#view").innerHTML='<div class="form-card"><div class="notice">'+(item?"تعديل بيانات المنتج.":"إضافة منتج جديد للمنيو.")+'</div><form id="pf" class="form-grid"><label>اسم المنتج<input name="name" value="'+(item?item.name:"")+'" required></label><label>السعر<input name="price" type="number" step=".01" value="'+(item?item.price:"")+'" required></label><label>القسم<select name="category_id">'+opts+'</select></label><label>رابط الصورة<input name="image_url" value="'+(item&&item.image_url||"")+'"></label><label>الوصف<input name="description" value="'+(item&&item.description||"")+'"></label><div><button class="primary-btn">'+(item?"حفظ التعديلات":"حفظ المنتج")+'</button> <button type="button" class="secondary-btn" id="cancelProduct">إلغاء</button></div></form></div>";$("#cancelProduct").onclick=products;$("#pf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),data={name:f.get("name"),price:Number(f.get("price")),category_id:f.get("category_id")||null,image_url:f.get("image_url")||null,description:f.get("description")||null};const r=item?await db.from("products").update({...data,updated_at:new Date().toISOString()}).eq("id",item.id):await db.from("products").insert({...data,active:true,notes_enabled:false});if(r.error)return toast("تعذر حفظ المنتج: "+r.error.message);toast(item?"تم تعديل المنتج":"تمت إضافة المنتج");products()};}
-async function categories(){const r=await db.from("categories").select("*").order("sort_order"),rows=r.data||[];$("#view").innerHTML='<div class="toolbar"><button class="primary-btn" id="newCat">+ إضافة قسم</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>القسم</th><th>الاسم الإنجليزي</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>'+rows.map(x=>"<tr><td>"+(x.icon||"•")+" "+x.name+"</td><td>"+(x.name_en||"—")+"</td><td>"+(x.active?"نشط":"مخفي")+"</td><td><button class=\"btn-small\" data-edit-cat=\""+x.id+"\">تعديل</button></td></tr>").join("")+"</tbody></table></div>";$("#newCat").onclick=()=>categoryForm();document.querySelectorAll("[data-edit-cat]").forEach(b=>b.onclick=()=>categoryForm(rows.find(x=>x.id===b.dataset.editCat)))}
+async function products(){
+ const r=await Promise.all([db.from("products").select("*,categories(name)").order("sort_order"),db.from("categories").select("id,name").eq("active",true).order("sort_order")]),rows=r[0].data||[],cats=r[1].data||[];
+ let html='<div class="toolbar"><button class="primary-btn" id="newProduct">+ إضافة منتج</button><input id="productSearch" placeholder="بحث…"></div><div class="table-wrap"><table class="data-table"><thead><tr><th>المنتج</th><th>القسم</th><th>السعر</th><th>الحالة</th><th>الملاحظات</th><th>إجراءات</th></tr></thead><tbody>';
+ html+=rows.map(x=>'<tr><td>'+x.name+'</td><td>'+(x.categories?x.categories.name:"—")+'</td><td class="price">'+money(x.price)+'</td><td>'+(x.active?"نشط":"مخفي")+'</td><td>'+(x.notes_enabled?"مفعلة":"مقفولة")+'</td><td><button class="btn-small" data-edit-product="'+x.id+'">تعديل</button> <button class="btn-small" data-toggle="'+x.id+'" data-active="'+x.active+'">'+(x.active?"إخفاء":"تفعيل")+'</button> <button class="btn-small" data-notes-toggle="'+x.id+'" data-notes-enabled="'+x.notes_enabled+'">'+(x.notes_enabled?"إيقاف الملاحظات":"تفعيل الملاحظات")+"</button></td></tr>").join("")+"</tbody></table></div>";
+ $("#view").innerHTML=html;$("#newProduct").onclick=()=>productForm(cats);$("#productSearch").oninput=e=>document.querySelectorAll("tbody tr").forEach(r=>r.style.display=r.textContent.includes(e.target.value)?"":"none");document.querySelectorAll("[data-edit-product]").forEach(b=>b.onclick=()=>productForm(cats,rows.find(x=>x.id===b.dataset.editProduct)));document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({active:b.dataset.active!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.toggle);if(r.error)return toast("تعذر تغيير حالة المنتج");products()});document.querySelectorAll("[data-notes-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({notes_enabled:b.dataset.notesEnabled!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.notesToggle);if(r.error)return toast("تعذر تغيير إعداد الملاحظات");products()});
+}
+function productForm(cats,item){const opts=cats.map(c=>'<option value="'+c.id+'" '+(item&&item.category_id===c.id?"selected":"")+'>'+c.name+"</option>").join("");$("#view").innerHTML='<div class="form-card"><div class="notice">'+(item?"تعديل بيانات المنتج.":"إضافة منتج جديد للمنيو.")+'</div><form id="pf" class="form-grid"><label>اسم المنتج<input name="name" value="'+(item?item.name:"")+'" required></label><label>السعر<input name="price" type="number" step=".01" value="'+(item?item.price:"")+'" required></label><label>القسم<select name="category_id">'+opts+'</select></label><label>رابط الصورة<input name="image_url" value="'+(item&&item.image_url||"")+'"></label><label>الوصف<input name="description" value="'+(item&&item.description||"")+'"></label><div><button class="primary-btn">'+(item?"حفظ التعديلات":"حفظ المنتج")+'</button> <button type="button" class="secondary-btn" id="cancelProduct">إلغاء</button></div></form></div>';$("#cancelProduct").onclick=products;$("#pf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),data={name:f.get("name"),price:Number(f.get("price")),category_id:f.get("category_id")||null,image_url:f.get("image_url")||null,description:f.get("description")||null};const r=item?await db.from("products").update({...data,updated_at:new Date().toISOString()}).eq("id",item.id):await db.from("products").insert({...data,active:true,notes_enabled:false});if(r.error)return toast("تعذر حفظ المنتج: "+r.error.message);toast(item?"تم تعديل المنتج":"تمت إضافة المنتج");products()}}
+async function categories(){const r=await db.from("categories").select("*").order("sort_order"),rows=r.data||[];$("#view").innerHTML='<div class="toolbar"><button class="primary-btn" id="newCat">+ إضافة قسم</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>القسم</th><th>الاسم الإنجليزي</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>'+rows.map(x=>"<tr><td>"+(x.icon||"•")+" "+x.name+"</td><td>"+(x.name_en||"—")+"</td><td>"+(x.active?"نشط":"مخفي")+'</td><td><button class="btn-small" data-edit-cat="'+x.id+'">تعديل</button></td></tr>').join("")+"</tbody></table></div>";$("#newCat").onclick=()=>categoryForm();document.querySelectorAll("[data-edit-cat]").forEach(b=>b.onclick=()=>categoryForm(rows.find(x=>x.id===b.dataset.editCat)))}
 function categoryForm(item){$("#view").innerHTML='<div class="form-card"><div class="notice">'+(item?"تعديل بيانات القسم.":"إضافة قسم جديد.")+'</div><form id="cf" class="form-grid"><label>اسم القسم<input name="name" value="'+(item?item.name:"")+'" required></label><label>الاسم الإنجليزي<input name="name_en" value="'+(item&&item.name_en||"")+'"></label><label>الأيقونة<input name="icon" value="'+(item&&item.icon||"")+'"></label><div><button class="primary-btn">'+(item?"حفظ التعديلات":"حفظ القسم")+'</button> <button type="button" class="secondary-btn" id="cancelCat">إلغاء</button></div></form></div>';$("#cancelCat").onclick=categories;$("#cf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),data={name:f.get("name"),name_en:f.get("name_en")||null,icon:f.get("icon")||null};const r=item?await db.from("categories").update(data).eq("id",item.id):await db.from("categories").insert({...data,active:true});if(r.error)return toast("تعذر حفظ القسم: "+r.error.message);toast(item?"تم تعديل القسم":"تمت إضافة القسم");categories()}}
-async function tables(){const r=await db.from("cafe_tables").select("*").order("table_number");const rows=r.data||[],active=rows.filter(x=>x.active).length;let html='<div class="stats"><div class="stat"><small>إجمالي الطاولات</small><b>'+rows.length+'</b></div><div class="stat"><small>الطاولات النشطة</small><b>'+active+'</b></div></div><div class="toolbar"><button class="primary-btn" id="addTable">+ إضافة طاولة</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>رقم الطاولة</th><th>الحالة</th><th></th></tr></thead><tbody>'+rows.map(x=>'<tr><td>طاولة '+x.table_number+"</td><td>"+(x.active?"نشطة":"موقوفة")+'</td><td><button class="btn-small" data-table-toggle="'+x.id+'" data-active="'+x.active+'">'+(x.active?"إيقاف":"تفعيل")+"</button></td></tr>").join("")+"</tbody></table></div>";$("#view").innerHTML=html;$("#addTable").onclick=async()=>{const number=prompt("رقم الطاولة:");if(!number)return;const r=await db.from("cafe_tables").insert({table_number:String(number),active:true});if(r.error)toast("رقم الطاولة موجود بالفعل أو غير صالح");else tables()};document.querySelectorAll("[data-table-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("cafe_tables").update({active:b.dataset.active!=="true"}).eq("id",b.dataset.tableToggle);if(r.error)toast("تعذر تغيير حالة الطاولة");else tables()})}
-async function staffView(){if(profile.role!=="owner")return toast("هذه الصفحة للمدير الأول فقط");const r=await db.from("staff_profiles").select("user_id,full_name,role,active,invited_email,created_at").order("created_at",{ascending:false});const inv=await db.from("staff_invitations").select("*").eq("active",true).order("created_at",{ascending:false});const rows=r.data||[],invs=inv.data||[];$("#view").innerHTML='<div class="form-card"><h3>إضافة موظف</h3><p class="notice">فقط المدير الأول يستطيع دعوة موظف. الموظف بعد التسجيل يدخل لوحة الإدارة، لكنه لا يرى هذه الصفحة.</p><form id="inviteForm" class="form-grid"><label>إيميل الموظف<input id="inviteEmail" type="email" required placeholder="employee@example.com"></label><div><button class="primary-btn">+ إضافة إيميل الموظف</button></div></form></div><div class="table-wrap"><table class="data-table"><thead><tr><th>الموظف</th><th>الإيميل</th><th>الدور</th><th>الحالة</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+x.full_name+'</td><td>'+((x.invited_email)||"—")+'</td><td>موظف</td><td>'+(x.active?"نشط":"موقوف")+'</td></tr>').join("")+invs.map(x=>'<tr><td>دعوة معلقة</td><td>'+x.email+'</td><td>موظف</td><td>بانتظار التسجيل</td></tr>').join("")+'</tbody></table></div>';$("#inviteForm").onsubmit=async e=>{e.preventDefault();const email=$("#inviteEmail").value.trim().toLowerCase();const r=await db.from("staff_invitations").insert({email,invited_by:profile.user_id,active:true});if(r.error)toast("هذا الإيميل موجود بالفعل أو تمت دعوته");else{toast("تمت إضافة إيميل الموظف");staffView()}}}
-async function settingsView(){if(!settings){const r=await db.from("cafe_settings").select("*").limit(1).maybeSingle();settings=r.data}$("#view").innerHTML='<div class="form-card"><h3>إعدادات الفاتورة</h3><form id="sf" class="form-grid"><label>اسم الكافيه<input name="cafe_name" value="'+(settings.cafe_name||"A&S Café")+'"></label><label>العملة<input name="currency" value="'+(settings.currency||"EGP")+'"></label><label>الضريبة %<input name="tax_percent" type="number" step=".01" value="'+settings.tax_percent+'"></label><label>الخدمة %<input name="service_percent" type="number" step=".01" value="'+settings.service_percent+'"></label><div><button class="primary-btn">حفظ</button></div></form></div>';$("#sf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),r=await db.from("cafe_settings").update({cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent")),updated_at:new Date().toISOString()}).eq("id",settings.id);if(r.error)toast("تعذر الحفظ");else{toast("تم حفظ الإعدادات");settings={...settings,cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent"))}}}}
-async function firstSetup(e){e.preventDefault();if(!db)return toast("تعذر الاتصال بالخادم. أعد تحميل الصفحة.");const form=e.currentTarget,button=form.querySelector("button[type=submit]")||form.querySelector("button"),name=$("#setupName").value.trim(),email=$("#setupEmail").value.trim().toLowerCase(),p=$("#setupPassword").value,p2=$("#setupPassword2").value;if(!name)return toast("اكتب اسم المدير");if(!email)return toast("اكتب البريد الإلكتروني");if(p!==p2)return toast("كلمتا السر غير متطابقتين");if(p.length<8)return toast("كلمة السر يجب أن تكون 8 أحرف على الأقل");if(button){button.disabled=true;button.dataset.oldText=button.textContent;button.textContent="جارٍ إنشاء الحساب…"}try{const check=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();if(check.data?.setup_completed){showLogin();return toast("تم إعداد المدير بالفعل")}
-// Try the existing account first so repeated setup attempts do not send new confirmation emails.
-const login=await db.auth.signInWithPassword({email,password:p});if(login.data?.session){const u=login.data.user;const prof=await db.from("staff_profiles").upsert({user_id:u.id,full_name:name,role:"owner",active:true},{onConflict:"user_id"});if(prof.error)return toast("تعذر إنشاء صلاحية المدير: "+prof.error.message);const done=await db.from("app_setup").update({setup_completed:true,completed_at:new Date().toISOString()}).eq("id",true).eq("setup_completed",false);if(done.error)return toast("الحساب موجود لكن تعذر إكمال إعداد المدير");toast("تم تفعيل المدير بنجاح");return enter()}const loginMsg=(login.error?.message||"").toLowerCase();if(loginMsg.includes("email not confirmed")||loginMsg.includes("not confirmed"))return toast("الحساب موجود. أكّد الإيميل من بريدك ثم سجّل الدخول؛ لن نرسل تسجيلًا جديدًا.");if(/invalid login credentials|invalid credentials|user not found/i.test(login.error?.message||"")){const r=await db.auth.signUp({email,password:p,options:{data:{full_name:name}}});if(r.error){if(/rate limit|too many|email limit/i.test(r.error.message||""))return toast("تم الوصول لحد إيميلات Supabase مؤقتًا. لا تعيد التسجيل؛ أكّد الحساب الموجود ثم سجّل الدخول.");return toast(r.error.message)}if(!r.data.session)return toast("تم إنشاء الحساب. راجع بريدك لتأكيد الحساب ثم سجّل الدخول.");const u=r.data.user,prof=await db.from("staff_profiles").upsert({user_id:u.id,full_name:name,role:"owner",active:true},{onConflict:"user_id"});if(prof.error)return toast("تعذر إنشاء صلاحية المدير: "+prof.error.message);const done=await db.from("app_setup").update({setup_completed:true,completed_at:new Date().toISOString()}).eq("id",true).eq("setup_completed",false);if(done.error)return toast("الحساب تم إنشاؤه لكن تعذر إكمال الإعداد");toast("تم إنشاء المدير بنجاح");return enter()}return toast("تعذر تسجيل الدخول بالحساب الموجود: "+(login.error?.message||"حاول مرة أخرى لاحقًا"))}finally{if(button){button.disabled=false;button.textContent=button.dataset.oldText||"إنشاء حساب المدير"}}}
-async function employeeSignup(e){e.preventDefault();if(!db)return toast("تعذر الاتصال بالخادم. أعد تحميل الصفحة.");const email=$("#employeeEmail").value.trim().toLowerCase(),name=$("#employeeName").value.trim(),p=$("#employeePassword").value,p2=$("#employeePassword2").value;if(p!==p2)return toast("كلمتا السر غير متطابقتين");if(p.length<8)return toast("كلمة السر يجب أن تكون 8 أحرف على الأقل");const check=await db.functions.invoke("customer-gateway",{body:{action:"check_invitation",email}});if(check.error||!check.data?.invited)return toast("هذا الإيميل غير مضاف من المدير");const r=await db.auth.signUp({email,password:p,options:{data:{full_name:name}}});if(r.error)return toast(r.error.message);if(!r.data.session)return toast("تم التسجيل. راجع بريدك لتأكيد الحساب، ثم ارجع وسجل الدخول بنفس الإيميل وكلمة السر.");const u=r.data.user,pf=await db.from("staff_profiles").insert({user_id:u.id,full_name:name,role:"cashier",active:true,invited_email:email});if(pf.error)return toast("تعذر تفعيل حساب الموظف: "+pf.error.message);const inv=await db.from("staff_invitations").select("id,email").eq("active",true).is("accepted_at",null).ilike("email",email).maybeSingle();if(inv.data)await db.from("staff_invitations").update({active:false,accepted_at:new Date().toISOString()}).eq("id",inv.data.id);toast("تم تفعيل حساب الموظف");enter()}
-document.addEventListener("DOMContentLoaded",function(){
-  try{
-    const sf=$("#setupForm"),ef=$("#employeeSignupForm"),lf=$("#loginForm");
-    const lb=$("#loginBox"),sb=$("#setupBox"),tl=$("#tabLogin"),tr=$("#tabRegister"),emp=$("#showEmployeeSignup");
-    function showTab(tab){
-      const login=tab==="login";
-      if(lb)lb.classList.toggle("hidden",!login);
-      if(sb)sb.classList.toggle("hidden",login);
-      if(tl)tl.classList.toggle("active",login);
-      if(tr)tr.classList.toggle("active",!login);
-    }
-    if(sf)sf.addEventListener("submit",firstSetup);
-    if(ef)ef.addEventListener("submit",employeeSignup);
-    if(lf&&!window.__adminAuthFallback)lf.addEventListener("submit",async function(e){
-      e.preventDefault();
-      const email=$("#email").value.trim().toLowerCase(),password=$("#password").value;
-      const button=lf.querySelector("button");
-      if(button){button.disabled=true;button.textContent="جارٍ الدخول…"}
-      try{
-        if(!db){toast("تعذر الاتصال بالخادم. أعد تحميل الصفحة.");return}
-        const r=await db.auth.signInWithPassword({email,password});
-        if(r.error){toast("تعذر تسجيل الدخول: "+r.error.message);return}
-        toast("تم تسجيل الدخول");
-        await enter();
-      }catch(err){console.error(err);toast("حدث خطأ أثناء تسجيل الدخول")}finally{
-        if(button){button.disabled=false;button.textContent="تسجيل الدخول"}
-      }
-    });
-    if(tl)tl.addEventListener("click",function(){showTab("login")});
-    if(tr)tr.addEventListener("click",async function(){
-      if(!db){toast("تعذر الاتصال بالخادم. أعد تحميل الصفحة.");return}
-      const check=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();
-      if(check.error){toast("تعذر التحقق من حالة التسجيل");return}
-      if(check.data?.setup_completed){showTab("login");toast("حساب المدير مسجل بالفعل. استخدم تسجيل الدخول.");return}
-      showTab("register");
-    });
-    if(emp)emp.addEventListener("click",function(){const box=$("#employeeSignupBox");if(box)box.classList.toggle("hidden")});
-    document.querySelectorAll("[data-view]").forEach(function(b){b.addEventListener("click",function(){currentView=b.dataset.view;renderView()})});
-    const logout=$("#logout");if(logout)logout.addEventListener("click",function(){db.auth.signOut()});
-    boot();
-  }catch(err){console.error("Admin UI init failed:",err);toast("حدث خطأ في تحميل أزرار صفحة الإدارة")}
+async function tables(){const r=await db.from("cafe_tables").select("*").order("table_number"),rows=r.data||[],active=rows.filter(x=>x.active).length;let html='<div class="stats"><div class="stat"><small>إجمالي الطاولات</small><b>'+rows.length+'</b></div><div class="stat"><small>الطاولات النشطة</small><b>'+active+'</b></div></div><div class="toolbar"><button class="primary-btn" id="addTable">+ إضافة طاولة</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>رقم الطاولة</th><th>الحالة</th><th></th></tr></thead><tbody>'+rows.map(x=>'<tr><td>طاولة '+x.table_number+"</td><td>"+(x.active?"نشطة":"موقوفة")+'</td><td><button class="btn-small" data-table-toggle="'+x.id+'" data-active="'+x.active+'">'+(x.active?"إيقاف":"تفعيل")+"</button></td></tr>").join("")+"</tbody></table></div>";$("#view").innerHTML=html;$("#addTable").onclick=async()=>{const number=prompt("رقم الطاولة:");if(!number)return;const r=await db.from("cafe_tables").insert({table_number:String(number),active:true});if(r.error)toast("رقم الطاولة موجود بالفعل أو غير صالح");else tables()};document.querySelectorAll("[data-table-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("cafe_tables").update({active:b.dataset.active!=="true"}).eq("id",b.dataset.tableToggle);if(r.error)toast("تعذر تغيير حالة الطاولة");else tables()})}
+async function settingsView(){if(!settings){const r=await db.from("cafe_settings").select("*").limit(1).maybeSingle();settings=r.data}if(!settings)return $("#view").innerHTML='<div class="notice">تعذر تحميل الإعدادات.</div>';$("#view").innerHTML='<div class="form-card"><h3>إعدادات الفاتورة</h3><form id="sf" class="form-grid"><label>اسم الكافيه<input name="cafe_name" value="'+(settings.cafe_name||"A&S Café")+'"></label><label>العملة<input name="currency" value="'+(settings.currency||"EGP")+'"></label><label>الضريبة %<input name="tax_percent" type="number" step=".01" value="'+settings.tax_percent+'"></label><label>الخدمة %<input name="service_percent" type="number" step=".01" value="'+settings.service_percent+'"></label><div><button class="primary-btn">حفظ</button></div></form></div>';$("#sf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),r=await db.from("cafe_settings").update({cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent")),updated_at:new Date().toISOString()}).eq("id",settings.id);if(r.error)toast("تعذر الحفظ: "+r.error.message);else{toast("تم حفظ الإعدادات");settings={...settings,cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent"))}}}}
+document.addEventListener("DOMContentLoaded",()=>{
+  document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>{currentView=b.dataset.view;renderView()}));
+  boot();
 });
