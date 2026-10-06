@@ -59,7 +59,12 @@ async function loadQuery(label,query){
   return result;
  }catch(error){console.error(label,error);return {data:null,error:error}}
 }
+function renderFallbackTables(){
+ const fallback=Array.from({length:10},(_,i)=>({id:"fallback-"+(i+1),table_number:String(i+1),active:true}));
+ if(!state.tables.length){state.tables=fallback;renderTables();}
+}
 async function init(){
+ renderFallbackTables();
  const results=await Promise.all([
   loadQuery("الإعدادات",db.from("cafe_settings").select("*").limit(1).maybeSingle()),
   loadQuery("الطاولات",db.from("cafe_tables").select("id,table_number,active").eq("active",true)),
@@ -75,7 +80,7 @@ async function init(){
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
  renderTables();renderCategories();renderProducts();updateCart();
  const failed=results.filter(function(x){return x.error}).map(function(x){return x.error.message||"خطأ غير معروف"});
- if(failed.length) toast("بعض البيانات لم تكتمل. جرّب تحديث الصفحة.");
+ if(failed.length){ console.error("Data loading failures",failed); toast("تعذر تحميل بعض البيانات من الخادم. الطاولات متاحة مؤقتًا."); }
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
 function renderTables(){
