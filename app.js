@@ -108,11 +108,12 @@ function renderProducts(){
 function openProduct(id){
  const p=state.products.find(function(x){return x.id===id});
  const groupIds=state.links.filter(function(x){return x.product_id===id}).map(function(x){return x.group_id});
- const groups=state.groups.filter(function(g){return groupIds.includes(g.id)});
+ const groups=state.groups.filter(function(g){return groupIds.includes(g.id)}); const hasModifiers=groups.length>0;
  let groupsHtml=groups.map(function(g){let opts=state.modifiers.filter(function(m){return m.group_id===g.id}).map(function(m){return '<button type="button" class="mod-option" data-group="'+g.id+'" data-mod="'+m.id+'">'+esc(m.name)+(Number(m.price_delta)?' (+'+money(m.price_delta)+')':"")+"</button>"}).join("");let required=Number(g.min_select||0)>0;return '<div class="mod-group"><div class="mod-head"><b>'+esc(g.name)+'</b><small>'+(required?"إجباري":"اختياري")+(g.max_select===1?" · اختيار واحد":" · اختيارات")+'</small></div><div class="mod-options">'+opts+"</div></div>"}).join("");
  $("#productModalBody").innerHTML='<div class="modal-product-img" style="background-image:url(\''+imgUrl(p).replace(/\\x27/g,"%27")+'\')"></div><span class="eyebrow">A&S SELECTION</span><h2>'+esc(p.name)+'</h2><p>'+esc(p.description||"اختيار فاخر من A&S Café.")+'</p>'+groupsHtml+'<button class="primary-btn" id="addConfigured">إضافة للسلة · '+money(p.price)+"</button>";
  document.querySelectorAll(".mod-option").forEach(function(b){b.onclick=function(){const g=state.groups.find(function(x){return x.id===b.dataset.group});if(g.max_select===1)document.querySelectorAll('[data-group="'+g.id+'"]').forEach(function(x){x.classList.remove("selected")});b.classList.toggle("selected")}})
- $("#addConfigured").onclick=function(){const selected=[...document.querySelectorAll(".mod-option.selected")].map(function(x){return state.modifiers.find(function(m){return m.id===x.dataset.mod})}).filter(Boolean);const total=Number(p.price)+selected.reduce(function(s,m){return s+Number(m.price_delta||0)},0);state.cart.push({key:crypto.randomUUID(),product:p,qty:1,mods:selected,unit:total});updateCart();closeModal("productModal");toast("تمت الإضافة إلى السلة")};
+ let productQty=1;if(!hasModifiers){$("#productQtyMinus").onclick=function(){productQty=Math.max(1,productQty-1);$("#productQty").textContent=productQty};$("#productQtyPlus").onclick=function(){productQty=Math.min(50,productQty+1);$("#productQty").textContent=productQty}}
+ $("#addConfigured").onclick=function(){const selected=[...document.querySelectorAll(".mod-option.selected")].map(function(x){return state.modifiers.find(function(m){return m.id===x.dataset.mod})}).filter(Boolean);const total=Number(p.price)+selected.reduce(function(s,m){return s+Number(m.price_delta||0)},0);state.cart.push({key:crypto.randomUUID(),product:p,qty:hasModifiers?1:productQty,mods:selected,unit:total,note:p.notes_enabled?($("#productNote")?.value||"").trim():""});updateCart();closeModal("productModal");toast("تمت الإضافة إلى السلة")};
  $("#productModal").classList.remove("hidden");
 }
 function closeModal(id){$("#"+id).classList.add("hidden")}
@@ -125,7 +126,7 @@ function updateCart(){
  $("#cartItems").innerHTML=state.cart.length?state.cart.map(function(i){
   return `
    <div class="cart-item">
-    <div class="cart-item-top"><div><h4>${esc(i.product.name)}</h4><small>${esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")}</small></div><b>${money(i.unit*i.qty)}</b></div>
+    <div class="cart-item-top"><div><h4>${esc(i.product.name)}</h4><small>${esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")}${i.note?" · "+esc(i.note):""}</small></div><b>${money(i.unit*i.qty)}</b></div>
     <div class="qty"><button data-minus="${i.key}">−</button><b>${i.qty}</b><button data-plus="${i.key}">+</button><button data-remove="${i.key}" style="margin-right:auto;color:#e88989">حذف</button></div>
    </div>`;
  }).join(""):'<div class="empty">السلة فارغة.<br>اختار حاجة تحبها من المنيو ☕</div>';
@@ -154,7 +155,7 @@ async function sendOrder(){
   items:state.cart.map(function(i){return {
    product_id:i.product.id,
    quantity:i.qty,
-   modifier_ids:i.mods.map(function(m){return m.id})
+   modifier_ids:i.mods.map(function(m){return m.id}),notes:i.note||null
   }})
  };
  if(!payload.table_id){
