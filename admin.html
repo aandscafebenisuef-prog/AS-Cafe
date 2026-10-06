@@ -10,6 +10,7 @@
 <section id="appView" class="app hidden"><aside class="sidebar"><div class="side-brand"><div class="brand-mark">A<span>&</span>S</div><b>A&S Café</b></div><nav><button data-view="orders" class="active">🔔 الطلبات</button><button data-view="products">☕ المنتجات</button><button data-view="categories">▦ الأقسام</button><button data-view="tables">🪑 الطاولات</button><button data-view="settings">⚙ الإعدادات</button><button id="staffNav" data-view="staff">👥 الموظفون</button></nav><button id="logout" class="logout">تسجيل الخروج</button></aside><main class="dashboard"><header class="dash-head"><div><span class="eyebrow">A&S CONTROL CENTER</span><h2 id="viewTitle">الطلبات</h2></div><div class="staff"><span id="staffName">—</span><i id="roleName">—</i></div></header><div id="view"></div></main></section>
 <script src="admin.js?v=2026100619.6"></script><script src="admin-realtime.js"></script><script>
 (function(){
+  window.__adminAuthFallback=true;
   function ready(){
     var loginBox=document.getElementById("loginBox"), setupBox=document.getElementById("setupBox");
     var tabLogin=document.getElementById("tabLogin"), tabRegister=document.getElementById("tabRegister");
