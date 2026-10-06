@@ -1,7 +1,7 @@
 const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
 const SUPABASE_KEY=null;
 const ADMIN_GATEWAY=SUPABASE_URL+"/functions/v1/admin-gateway";
-async function getApiKey(){const r=await fetch("app.js?key="+Date.now(),{cache:"no-store"});const t=await r.text();const k=t.indexOf("SUPABASE_KEY");const q=t.indexOf(""",k+12);const e=t.indexOf(""",q+1);if(k<0||q<0||e<0)throw new Error("تعذر قراءة إعدادات الاتصال");return t.slice(q+1,e)}
+async function getApiKey(){const r=await fetch("app.js?key="+Date.now(),{cache:"no-store"});const t=await r.text();const k=t.indexOf("SUPABASE_KEY");const eq=t.indexOf("=",k);const qchar=t.charAt(eq+1)==="'"?"'":"\"";const q=t.indexOf(qchar,eq+1);const e=t.indexOf(qchar,q+1);if(k<0||eq<0||q<0||e<0)throw new Error("تعذر قراءة إعدادات الاتصال");return t.slice(q+1,e)}
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
 let profile=null,settings=null,currentView="orders",lockTimer=null;
 const $=s=>document.querySelector(s);
@@ -61,7 +61,7 @@ async function boot(){
     const alive=await lock("heartbeat");
     if(!alive){clearInterval(lockTimer);lockTimer=null;showMessage("تم إيقاف الجلسة","تم فتح الإدارة من جهاز آخر. هذه الصفحة لم تعد تملك القفل.");}
   },7000);
-  window.addEventListener("pagehide",()=>{try{fetch(ADMIN_GATEWAY,{method:"POST",keepalive:true,headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"})})}catch(_){}});
+  window.addEventListener("pagehide",()=>{try{fetch(ADMIN_GATEWAY,{method:"POST",keepalive:true,headers:{"apikey":await getApiKey(),"Content-Type":"application/json"},body:JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"})})}catch(_){}});
   await enter();
 }
 async function enter(){
