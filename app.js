@@ -1,7 +1,7 @@
 const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
 const SUPABASE_KEY="sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8";
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-const state={settings:null,tables:[],categories:[],products:[],groups:[],modifiers:[],links:[],table:null,category:null,cart:[]};
+const state={settings:null,tables:[],categories:[],products:[],groups:[],modifiers:[],links:[],table:null,category:null,cart:[],trackingToken:null,trackingTimer:null};
 const $=s=>document.querySelector(s);
 const money=n=>Number(n||0).toFixed(2)+" EGP";
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2400)}
@@ -60,18 +60,21 @@ function updateCart(){
 function changeQty(key,d){const i=state.cart.find(function(x){return x.key===key});if(!i)return;i.qty+=d;if(i.qty<1)state.cart=state.cart.filter(function(x){return x!==i});updateCart()}
 function openCart(){$("#cartDrawer").classList.add("open");$("#drawerBackdrop").classList.add("show")}
 function closeCart(){$("#cartDrawer").classList.remove("open");$("#drawerBackdrop").classList.remove("show")}
+function statusLabel(s){return({new:"جديد — وصل للكاشير",confirmed:"تم تأكيد الطلب",preparing:"جاري التحضير",ready:"الطلب جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"تم إلغاء الطلب"})[s]||s}
+async function refreshCustomerOrder(){if(!state.trackingToken)return;const r=await db.rpc("get_customer_order",{p_token:state.trackingToken});if(r.error||!r.data)return;const o=r.data.order;$("#customerStatus").textContent=statusLabel(o.status);$("#customerStaff").textContent=o.assigned_staff_name||"لم يتم الاستلام بعد";$("#customerCreated").textContent=new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"});$("#customerEta").textContent=o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده";if(o.status==="completed"||o.status==="cancelled"){clearInterval(state.trackingTimer);state.trackingTimer=null}}
 async function sendOrder(){
  if(!state.table)return toast("اختار رقم الطاولة أولاً");if(!state.cart.length)return toast("السلة فارغة");
  const btn=$("#sendOrder");btn.disabled=true;btn.textContent="جاري إرسال الطلب…";
- const subtotal=state.cart.reduce(function(s,i){return s+i.unit*i.qty},0),tax=subtotal*Number(state.settings.tax_percent||0)/100,service=subtotal*Number(state.settings.service_percent||0)/100;
- const order={table_id:state.table.id,status:"new",order_type:"dine_in",customer_note:$("#orderNote").value.trim()||null,subtotal:subtotal,tax_percent:state.settings.tax_percent,tax_amount:tax,service_percent:state.settings.service_percent,service_amount:service,total:subtotal+tax+service};
- const inserted=await db.from("orders").insert(order).select("id,order_number").single();
- if(inserted.error){btn.disabled=false;btn.textContent="إرسال الطلب →";return toast("حصل خطأ أثناء إرسال الطلب")}
- const rows=state.cart.map(function(i){return {order_id:inserted.data.id,product_id:i.product.id,product_name:i.product.name,unit_price:i.unit,quantity:i.qty,line_total:i.unit*i.qty,notes:null}});
+ const subtotal=state.cart.reduce((s,i)=>s+i.unit*i.qty,0),tax=subtotal*Number(state.settings.tax_percent||0)/100,service=subtotal*Number(state.settings.service_percent||0)/100;
+ const token=crypto.randomUUID()+crypto.randomUUID();
+ const order={table_id:state.table.id,status:"new",order_type:"dine_in",customer_note:$("#orderNote").value.trim()||null,subtotal:subtotal,tax_percent:state.settings.tax_percent,tax_amount:tax,service_percent:state.settings.service_percent,service_amount:service,total:subtotal+tax+service,customer_tracking_token:token};
+ const inserted=await db.from("orders").insert(order).select("id,order_number,created_at").single();
+ if(inserted.error){btn.disabled=false;btn.textContent="إرسال الطلب →";console.error(inserted.error);return toast("حصل خطأ أثناء إرسال الطلب")}
+ const rows=state.cart.map(i=>({order_id:inserted.data.id,product_id:i.product.id,product_name:i.product.name,unit_price:i.unit,quantity:i.qty,line_total:i.unit*i.qty,notes:null}));
  const items=await db.from("order_items").insert(rows).select("id");
  if(items.error){console.error(items.error);toast("تم إنشاء الطلب لكن تعذر حفظ التفاصيل");btn.disabled=false;btn.textContent="إرسال الطلب →";return}
- const mods=[];state.cart.forEach(function(i,idx){i.mods.forEach(function(m){mods.push({order_item_id:items.data[idx].id,modifier_id:m.id,modifier_name:m.name,price_delta:m.price_delta})})});
+ const mods=[];state.cart.forEach((i,idx)=>i.mods.forEach(m=>mods.push({order_item_id:items.data[idx].id,modifier_id:m.id,modifier_name:m.name,price_delta:m.price_delta})));
  if(mods.length)await db.from("order_item_modifiers").insert(mods);
- closeCart();$("#successNumber").textContent="#"+inserted.data.order_number;$("#successModal").classList.remove("hidden");state.cart=[];$("#orderNote").value="";updateCart();btn.disabled=false;btn.textContent="إرسال الطلب →";
+ closeCart();$("#successNumber").textContent="#"+inserted.data.order_number;state.trackingToken=token;$("#successModal").classList.remove("hidden");state.cart=[];$("#orderNote").value="";updateCart();btn.disabled=false;btn.textContent="إرسال الطلب →";await refreshCustomerOrder();if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=setInterval(refreshCustomerOrder,4000);
 }
-$("#cartBtn").onclick=openCart;$("#closeCart").onclick=closeCart;$("#drawerBackdrop").onclick=closeCart;$("#sendOrder").onclick=sendOrder;$("#newOrder").onclick=function(){closeModal("successModal")};$("#closeProduct").onclick=function(){closeModal("productModal")};init();
+$("#cartBtn").onclick=openCart;$("#closeCart").onclick=closeCart;$("#drawerBackdrop").onclick=closeCart;$("#sendOrder").onclick=sendOrder;$("#newOrder").onclick=function(){closeModal("successModal");state.trackingToken=null;if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=null;};$("#closeProduct").onclick=function(){closeModal("productModal")};init();
