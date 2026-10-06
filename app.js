@@ -143,12 +143,18 @@ function statusLabel(s){return({new:"جديد — وصل للكاشير",confirm
 function renderCustomerInvoice(order, cartItems){
  const box=$("#customerInvoice"); if(!box)return;
  const items=Array.isArray(cartItems)?cartItems:[];
+ const subtotal=items.reduce(function(s,i){return s+Number(i.unit||0)*Number(i.qty||1)},0);
+ const taxPercent=Number(order?.tax_percent ?? state.settings?.tax_percent ?? 0);
+ const servicePercent=Number(order?.service_percent ?? state.settings?.service_percent ?? 0);
+ const tax=Number(order?.tax_amount ?? subtotal*taxPercent/100);
+ const service=Number(order?.service_amount ?? subtotal*servicePercent/100);
+ const total=Number(order?.total ?? subtotal+tax+service);
  const rows=items.map(function(i){
   const mods=i.mods&&i.mods.length?'<div class="customer-invoice-mod">'+i.mods.map(function(m){return esc(m.name)+(Number(m.price_delta)?' · +'+money(m.price_delta):"")}).join(" · ")+'</div>':"";
   const note=i.note?'<div class="customer-invoice-note">ملاحظة: '+esc(i.note)+'</div>':"";
   return '<div class="customer-invoice-item"><div><b>'+esc(i.product.name)+'</b><small>'+Number(i.qty||1)+' × '+money(i.unit)+'</small>'+mods+note+'</div><strong>'+money(Number(i.unit)*Number(i.qty||1))+'</strong></div>';
  }).join("");
- box.innerHTML='<div class="customer-invoice-title">تفاصيل الفاتورة</div>'+rows+'<div class="customer-invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(order.subtotal)+'</b></div><div><span>الضريبة ('+Number(order.tax_percent||0)+'%)</span><b>'+money(order.tax_amount)+'</b></div><div><span>الخدمة ('+Number(order.service_percent||0)+'%)</span><b>'+money(order.service_amount)+'</b></div><div class="customer-invoice-total"><span>الإجمالي</span><strong>'+money(order.total)+'</strong></div></div>';
+ box.innerHTML='<div class="customer-invoice-title">🧾 تفاصيل الفاتورة</div>'+rows+'<div class="customer-invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(subtotal)+'</b></div><div><span>الضريبة ('+taxPercent+'%)</span><b>'+money(tax)+'</b></div><div><span>الخدمة ('+servicePercent+'%)</span><b>'+money(service)+'</b></div><div class="customer-invoice-total"><span>الإجمالي</span><strong>'+money(total)+'</strong></div></div>';
 }
 async function refreshCustomerOrder(){if(!state.trackingToken)return;const r=await db.functions.invoke("customer-gateway",{body:{action:"get_order",token:state.trackingToken}});if(r.error||!r.data?.order)return;const o=r.data.order;$("#customerStatus").textContent=statusLabel(o.status);$("#customerStaff").textContent=(o.assigned_staff_name||"لم يبدأ التجهيز بعد")+(o.assigned_at?" · "+new Date(o.assigned_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"");$("#customerCreated").textContent=new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"});$("#customerEta").textContent=o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده";if(o.status==="completed"||o.status==="cancelled"){clearInterval(state.trackingTimer);state.trackingTimer=null}}
 async function sendOrder(){
