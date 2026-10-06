@@ -71,7 +71,7 @@ async function init(){
  bindBootTables();
  const results=await Promise.all([
   loadQuery("الإعدادات",db.from("cafe_settings").select("cafe_name,logo_url,currency,tax_percent,service_percent").limit(1)),
-  loadQuery("الطاولات",db.from("cafe_tables").select("id,table_number,active").eq("active",true)),
+  loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}})),
   loadQuery("الأقسام",db.from("categories").select("id,name,name_en,icon,image_url,sort_order,active").eq("active",true).order("sort_order")),
   loadQuery("المنتجات",db.from("products").select("id,category_id,name,name_en,description,price,image_url,active,featured,sort_order").eq("active",true).order("sort_order")),
   loadQuery("مجموعات الإضافات",db.from("modifier_groups").select("id,name,name_en,min_select,max_select,active").eq("active",true).order("name")),
