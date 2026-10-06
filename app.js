@@ -55,9 +55,9 @@ async function loadQuery(label,query){
    query,
    new Promise(function(resolve){setTimeout(function(){resolve({data:null,error:{message:"انتهت مهلة تحميل "+label}})},10000)})
   ]);
-  if(result.error)console.error(label,result.error);
-  return result;
- }catch(error){console.error(label,error);return {data:null,error:error}}
+  if(result.error)console.error("A&S load failure:",label,result.error);
+  return {label:label,data:result.data,error:result.error||null};
+ }catch(error){console.error("A&S load exception:",label,error);return {label:label,data:null,error:error}}
 }
 function renderFallbackTables(){
  const fallback=Array.from({length:10},(_,i)=>({id:null,table_number:String(i+1),active:true,fallback:true}));
@@ -70,21 +70,27 @@ async function init(){
  renderFallbackTables();
  bindBootTables();
  const results=await Promise.all([
-  loadQuery("الإعدادات",db.from("cafe_settings").select("*").limit(1).maybeSingle()),
+  loadQuery("الإعدادات",db.from("cafe_settings").select("cafe_name,logo_url,currency,tax_percent,service_percent").limit(1)),
   loadQuery("الطاولات",db.from("cafe_tables").select("id,table_number,active").eq("active",true)),
-  loadQuery("الأقسام",db.from("categories").select("*").eq("active",true).order("sort_order")),
-  loadQuery("المنتجات",db.from("products").select("*").eq("active",true).order("sort_order")),
-  loadQuery("مجموعات الإضافات",db.from("modifier_groups").select("*").eq("active",true).order("name")),
-  loadQuery("الإضافات",db.from("modifiers").select("*").eq("active",true).order("sort_order")),
-  loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("*"))
+  loadQuery("الأقسام",db.from("categories").select("id,name,name_en,icon,image_url,sort_order,active").eq("active",true).order("sort_order")),
+  loadQuery("المنتجات",db.from("products").select("id,category_id,name,name_en,description,price,image_url,active,featured,sort_order").eq("active",true).order("sort_order")),
+  loadQuery("مجموعات الإضافات",db.from("modifier_groups").select("id,name,name_en,min_select,max_select,active").eq("active",true).order("name")),
+  loadQuery("الإضافات",db.from("modifiers").select("id,group_id,name,name_en,price_delta,active,sort_order").eq("active",true).order("sort_order")),
+  loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("product_id,group_id"))
  ]);
  state.settings=results[0].data||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
  if(results[1].data&&results[1].data.length){state.tables=results[1].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{renderFallbackTables();}
  state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
  renderTables();bindBootTables();renderCategories();renderProducts();updateCart();
- const failed=results.filter(function(x){return x.error}).map(function(x){return x.error.message||"خطأ غير معروف"});
- if(failed.length){ console.error("Data loading failures",failed); toast("تعذر تحميل بعض البيانات من الخادم. الطاولات متاحة مؤقتًا."); }
+ const failed=results.filter(function(x){return x.error});
+ if(failed.length){
+  const names=failed.map(function(x){return x.label}).join("، ");
+  console.error("A&S data loading failures:",failed);
+  if(failed.some(function(x){return x.label==="الطاولات"})) toast("تعذر تحميل الطاولات من الخادم؛ تم تفعيل الطاولات المؤقتة.");
+  else if(failed.some(function(x){return x.label==="المنتجات"||x.label==="الأقسام"})) toast("تعذر تحميل المنيو بالكامل؛ حاول تحديث الصفحة.");
+  else console.warn("Optional A&S data unavailable:",names);
+ }
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
 function renderTables(){
