@@ -5,7 +5,7 @@ async function getApiKey(){
   const response=await fetch("app.js?cache="+Date.now(),{cache:"no-store"});
   if(!response.ok)throw new Error("تعذر تحميل إعدادات الاتصال.");
   const source=await response.text();
-  const match=source.match(/(?:const|let|var)\\s+SUPABASE_KEY\\s*=\\s*["']([^"']+)["']/);
+  const match=source.match(/(?:const|let|var)\s+SUPABASE_KEY\s*=\s*["']([^"']+)["']/);
   if(!match)throw new Error("تعذر العثور على مفتاح الاتصال.");
   return match[1];
 }
