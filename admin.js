@@ -70,4 +70,43 @@ async function firstSetup(e){e.preventDefault();const form=e.currentTarget,butto
 // Try the existing account first so repeated setup attempts do not send new confirmation emails.
 const login=await db.auth.signInWithPassword({email,password:p});if(login.data?.session){const u=login.data.user;const prof=await db.from("staff_profiles").upsert({user_id:u.id,full_name:name,role:"owner",active:true},{onConflict:"user_id"});if(prof.error)return toast("تعذر إنشاء صلاحية المدير: "+prof.error.message);const done=await db.from("app_setup").update({setup_completed:true,completed_at:new Date().toISOString()}).eq("id",true).eq("setup_completed",false);if(done.error)return toast("الحساب موجود لكن تعذر إكمال إعداد المدير");toast("تم تفعيل المدير بنجاح");return enter()}const loginMsg=(login.error?.message||"").toLowerCase();if(loginMsg.includes("email not confirmed")||loginMsg.includes("not confirmed"))return toast("الحساب موجود. أكّد الإيميل من بريدك ثم سجّل الدخول؛ لن نرسل تسجيلًا جديدًا.");if(/invalid login credentials|invalid credentials|user not found/i.test(login.error?.message||"")){const r=await db.auth.signUp({email,password:p,options:{data:{full_name:name}}});if(r.error){if(/rate limit|too many|email limit/i.test(r.error.message||""))return toast("تم الوصول لحد إيميلات Supabase مؤقتًا. لا تعيد التسجيل؛ أكّد الحساب الموجود ثم سجّل الدخول.");return toast(r.error.message)}if(!r.data.session)return toast("تم إنشاء الحساب. راجع بريدك لتأكيد الحساب ثم سجّل الدخول.");const u=r.data.user,prof=await db.from("staff_profiles").upsert({user_id:u.id,full_name:name,role:"owner",active:true},{onConflict:"user_id"});if(prof.error)return toast("تعذر إنشاء صلاحية المدير: "+prof.error.message);const done=await db.from("app_setup").update({setup_completed:true,completed_at:new Date().toISOString()}).eq("id",true).eq("setup_completed",false);if(done.error)return toast("الحساب تم إنشاؤه لكن تعذر إكمال الإعداد");toast("تم إنشاء المدير بنجاح");return enter()}return toast("تعذر تسجيل الدخول بالحساب الموجود: "+(login.error?.message||"حاول مرة أخرى لاحقًا"))}finally{if(button){button.disabled=false;button.textContent=button.dataset.oldText||"إنشاء حساب المدير"}}}
 async function employeeSignup(e){e.preventDefault();const email=$("#employeeEmail").value.trim().toLowerCase(),name=$("#employeeName").value.trim(),p=$("#employeePassword").value,p2=$("#employeePassword2").value;if(p!==p2)return toast("كلمتا السر غير متطابقتين");if(p.length<8)return toast("كلمة السر يجب أن تكون 8 أحرف على الأقل");const check=await db.functions.invoke("customer-gateway",{body:{action:"check_invitation",email}});if(check.error||!check.data?.invited)return toast("هذا الإيميل غير مضاف من المدير");const r=await db.auth.signUp({email,password:p,options:{data:{full_name:name}}});if(r.error)return toast(r.error.message);if(!r.data.session)return toast("تم التسجيل. راجع بريدك لتأكيد الحساب، ثم ارجع وسجل الدخول بنفس الإيميل وكلمة السر.");const u=r.data.user,pf=await db.from("staff_profiles").insert({user_id:u.id,full_name:name,role:"cashier",active:true,invited_email:email});if(pf.error)return toast("تعذر تفعيل حساب الموظف: "+pf.error.message);const inv=await db.from("staff_invitations").select("id,email").eq("active",true).is("accepted_at",null).ilike("email",email).maybeSingle();if(inv.data)await db.from("staff_invitations").update({active:false,accepted_at:new Date().toISOString()}).eq("id",inv.data.id);toast("تم تفعيل حساب الموظف");enter()}
-document.addEventListener("DOMContentLoaded",()=>{const sf=$("#setupForm"),ef=$("#employeeSignupForm"),lf=$("#loginForm"),lb=$("#loginBox"),sb=$("#setupBox"),tl=$("#tabLogin"),tr=$("#tabRegister");const showTab=tab=>{const login=tab==="login";lb.classList.toggle("hidden",!login);sb.classList.toggle("hidden",login);tl.classList.toggle("active",login);tr.classList.toggle("active",!login)};if(sf)sf.onsubmit=firstSetup;if(ef)ef.onsubmit=employeeSignup;if(lf)lf.onsubmit=async e=>{e.preventDefault();const email=$("#email").value.trim().toLowerCase(),password=$("#password").value;const r=await db.auth.signInWithPassword({email,password});if(r.error)toast("تعذر تسجيل الدخول: "+r.error.message)}if(tl)tl.onclick=()=>showTab("login");if(tr)tr.onclick=async()=>{const check=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();if(check.error)return toast("تعذر التحقق من حالة التسجيل: "+check.error.message);if(check.data?.setup_completed){showTab("login");return toast("حساب المدير مسجل بالفعل. استخدم تسجيل الدخول.")}showTab("register")};$("#showEmployeeSignup").onclick=()=>$("#employeeSignupBox").classList.toggle("hidden");document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view;renderView()});$("#logout").onclick=()=>db.auth.signOut();boot()});
+document.addEventListener("DOMContentLoaded",function(){
+  try{
+    const sf=$("#setupForm"),ef=$("#employeeSignupForm"),lf=$("#loginForm");
+    const lb=$("#loginBox"),sb=$("#setupBox"),tl=$("#tabLogin"),tr=$("#tabRegister"),emp=$("#showEmployeeSignup");
+    function showTab(tab){
+      const login=tab==="login";
+      if(lb)lb.classList.toggle("hidden",!login);
+      if(sb)sb.classList.toggle("hidden",login);
+      if(tl)tl.classList.toggle("active",login);
+      if(tr)tr.classList.toggle("active",!login);
+    }
+    if(sf)sf.addEventListener("submit",firstSetup);
+    if(ef)ef.addEventListener("submit",employeeSignup);
+    if(lf)lf.addEventListener("submit",async function(e){
+      e.preventDefault();
+      const email=$("#email").value.trim().toLowerCase(),password=$("#password").value;
+      const button=lf.querySelector("button");
+      if(button){button.disabled=true;button.textContent="جارٍ الدخول…"}
+      try{
+        const r=await db.auth.signInWithPassword({email,password});
+        if(r.error){toast("تعذر تسجيل الدخول: "+r.error.message);return}
+        toast("تم تسجيل الدخول");
+        await enter();
+      }catch(err){console.error(err);toast("حدث خطأ أثناء تسجيل الدخول")}finally{
+        if(button){button.disabled=false;button.textContent="تسجيل الدخول"}
+      }
+    });
+    if(tl)tl.addEventListener("click",function(){showTab("login")});
+    if(tr)tr.addEventListener("click",async function(){
+      const check=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();
+      if(check.error){toast("تعذر التحقق من حالة التسجيل");return}
+      if(check.data?.setup_completed){showTab("login");toast("حساب المدير مسجل بالفعل. استخدم تسجيل الدخول.");return}
+      showTab("register");
+    });
+    if(emp)emp.addEventListener("click",function(){const box=$("#employeeSignupBox");if(box)box.classList.toggle("hidden")});
+    document.querySelectorAll("[data-view]").forEach(function(b){b.addEventListener("click",function(){currentView=b.dataset.view;renderView()})});
+    const logout=$("#logout");if(logout)logout.addEventListener("click",function(){db.auth.signOut()});
+    boot();
+  }catch(err){console.error("Admin UI init failed:",err);toast("حدث خطأ في تحميل أزرار صفحة الإدارة")}
+});
