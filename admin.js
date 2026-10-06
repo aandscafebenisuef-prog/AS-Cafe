@@ -50,8 +50,7 @@ async function orders(){
  });
  document.querySelectorAll("[data-eta]").forEach(b=>b.onclick=async()=>{
   const o=rows.find(x=>x.id===b.dataset.eta),current=o?.estimated_ready_at?new Date(o.estimated_ready_at).toISOString().slice(0,16):"";
-  const value=prompt("اكتب الموعد المتوقع بصيغة YYYY-MM-DD HH:MM\
-اتركه فارغًا لإزالة الموعد:",current.replace("T"," "));
+  const value=prompt("اكتب الموعد المتوقع بصيغة YYYY-MM-DD HH:MM\\nاتركه فارغًا لإزالة الموعد:",current.replace("T"," "));
   if(value===null)return;
   let iso=null;
   if(value.trim()){const d=new Date(value.trim().replace(" ","T"));if(isNaN(d.getTime()))return toast("صيغة الوقت غير صحيحة");iso=d.toISOString()}
