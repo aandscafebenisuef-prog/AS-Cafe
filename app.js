@@ -60,11 +60,15 @@ async function loadQuery(label,query){
  }catch(error){console.error(label,error);return {data:null,error:error}}
 }
 function renderFallbackTables(){
- const fallback=Array.from({length:10},(_,i)=>({id:"fallback-"+(i+1),table_number:String(i+1),active:true}));
+ const fallback=Array.from({length:10},(_,i)=>({id:null,table_number:String(i+1),active:true,fallback:true}));
  if(!state.tables.length){state.tables=fallback;renderTables();}
+}
+function bindBootTables(){
+ document.querySelectorAll(".boot-table").forEach(function(b){b.onclick=function(){const n=b.dataset.tableNumber;const local=state.tables.find(function(t){return String(t.table_number)===String(n)});state.table=local||{id:null,table_number:String(n),active:true,fallback:true};renderTables();$("#tableBadge").textContent="طاولة "+n;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"});}});
 }
 async function init(){
  renderFallbackTables();
+ bindBootTables();
  const results=await Promise.all([
   loadQuery("الإعدادات",db.from("cafe_settings").select("*").limit(1).maybeSingle()),
   loadQuery("الطاولات",db.from("cafe_tables").select("id,table_number,active").eq("active",true)),
@@ -75,10 +79,10 @@ async function init(){
   loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("*"))
  ]);
  state.settings=results[0].data||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
- state.tables=(results[1].data||[]).sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});
+ if(results[1].data&&results[1].data.length){state.tables=results[1].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{renderFallbackTables();}
  state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
- renderTables();renderCategories();renderProducts();updateCart();
+ renderTables();bindBootTables();renderCategories();renderProducts();updateCart();
  const failed=results.filter(function(x){return x.error}).map(function(x){return x.error.message||"خطأ غير معروف"});
  if(failed.length){ console.error("Data loading failures",failed); toast("تعذر تحميل بعض البيانات من الخادم. الطاولات متاحة مؤقتًا."); }
 }
@@ -122,7 +126,8 @@ function closeCart(){$("#cartDrawer").classList.remove("open");$("#drawerBackdro
 function statusLabel(s){return({new:"جديد — وصل للكاشير",confirmed:"تم تأكيد الطلب",preparing:"جاري التحضير",ready:"الطلب جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"تم إلغاء الطلب"})[s]||s}
 async function refreshCustomerOrder(){if(!state.trackingToken)return;const r=await db.functions.invoke("customer-gateway",{body:{action:"get_order",token:state.trackingToken}});if(r.error||!r.data?.order)return;const o=r.data.order;$("#customerStatus").textContent=statusLabel(o.status);$("#customerStaff").textContent=(o.assigned_staff_name||"لم يبدأ التجهيز بعد")+(o.assigned_at?" · "+new Date(o.assigned_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"");$("#customerCreated").textContent=new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"});$("#customerEta").textContent=o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده";if(o.status==="completed"||o.status==="cancelled"){clearInterval(state.trackingTimer);state.trackingTimer=null}}
 async function sendOrder(){
- if(!state.table)return toast("اختار رقم الطاولة أولاً");if(!state.cart.length)return toast("السلة فارغة");const customerName=$("#customerName").value.trim();if(!customerName)return toast("اسم الزبون مطلوب قبل تأكيد الطلب");
+ if(!state.table)return toast("اختار رقم الطاولة أولاً");if(!state.cart.length)return toast("السلة فارغة");
+ if(!state.table.id){const tr=await db.from("cafe_tables").select("id,table_number,active").eq("table_number",state.table.table_number).eq("active",true).maybeSingle();if(tr.error||!tr.data)return toast("تعذر تأكيد الطاولة من الخادم، حاول مرة أخرى");state.table=tr.data;}const customerName=$("#customerName").value.trim();if(!customerName)return toast("اسم الزبون مطلوب قبل تأكيد الطلب");
  const btn=$("#sendOrder");btn.disabled=true;btn.textContent="جاري إرسال الطلب…";
  const subtotal=state.cart.reduce((s,i)=>s+i.unit*i.qty,0),tax=subtotal*Number(state.settings.tax_percent||0)/100,service=subtotal*Number(state.settings.service_percent||0)/100;
  const token=crypto.randomUUID()+crypto.randomUUID();
