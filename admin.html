@@ -1,58 +1,42 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>A&S Café · الإدارة</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="admin.css?v=2026100619"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><style>.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0 25px}.auth-tab{padding:12px;border:1px solid rgba(216,173,92,.25);border-radius:12px;background:#17120f;color:#a99b8c;font-weight:800;cursor:pointer}.auth-tab.active{background:#2a2119;color:#f0cf86;border-color:#d8ad5c}</style></head>
-<body><div id="toast" class="toast"></div>
-<section id="loginView" class="login-view"><div class="login-card"><div class="brand-mark">A<span>&</span>S</div><span class="eyebrow">A&S CAFÉ · BACK OFFICE</span>
-<div class="auth-tabs"><button type="button" id="tabLogin" class="auth-tab active">تسجيل الدخول</button><button type="button" id="tabRegister" class="auth-tab">تسجيل</button></div>
-<div id="loginBox"><h1>تسجيل الدخول</h1><p>ادخل بالبريد الإلكتروني وكلمة المرور الخاصة بك.</p><form id="loginForm"><input id="email" type="email" placeholder="البريد الإلكتروني" required><input id="password" type="password" placeholder="كلمة المرور" required><button class="primary-btn">تسجيل الدخول</button></form><div class="login-divider">أو</div><button id="showEmployeeSignup" type="button" class="secondary-btn">تفعيل حساب موظف</button>
-<div id="employeeSignupBox" class="hidden"><h3>حساب موظف</h3><p>اكتب نفس البريد الذي أضافه المدير، ثم اختر اسمك وكلمة السر.</p><form id="employeeSignupForm"><input id="employeeEmail" type="email" placeholder="البريد الذي أضافه المدير" required><input id="employeeName" placeholder="اسم الموظف" required><input id="employeePassword" type="password" minlength="8" placeholder="كلمة السر الخاصة بك" required><input id="employeePassword2" type="password" minlength="8" placeholder="تأكيد كلمة السر" required><button class="primary-btn">إنشاء حساب الموظف</button></form></div></div>
-<div id="setupBox" class="hidden"><h1>إنشاء حساب المدير</h1><p>التسجيل هنا مخصص لإنشاء المدير الأول للكافيه. بعد إنشاء المدير يمكنك استخدام تبويب تسجيل الدخول.</p><form id="setupForm"><input id="setupName" placeholder="اسم المدير" required><input id="setupEmail" type="email" placeholder="البريد الإلكتروني" required><input id="setupPassword" type="password" minlength="8" placeholder="كلمة السر — 8 أحرف على الأقل" required><input id="setupPassword2" type="password" minlength="8" placeholder="تأكيد كلمة السر" required><button class="primary-btn">تسجيل حساب المدير</button></form></div>
-<a href="index.html">← العودة لمنيو الزبون</a></div></section>
-<section id="appView" class="app hidden"><aside class="sidebar"><div class="side-brand"><div class="brand-mark">A<span>&</span>S</div><b>A&S Café</b></div><nav><button data-view="orders" class="active">🔔 الطلبات</button><button data-view="products">☕ المنتجات</button><button data-view="categories">▦ الأقسام</button><button data-view="tables">🪑 الطاولات</button><button data-view="settings">⚙ الإعدادات</button><button id="staffNav" data-view="staff">👥 الموظفون</button></nav><button id="logout" class="logout">تسجيل الخروج</button></aside><main class="dashboard"><header class="dash-head"><div><span class="eyebrow">A&S CONTROL CENTER</span><h2 id="viewTitle">الطلبات</h2></div><div class="staff"><span id="staffName">—</span><i id="roleName">—</i></div></header><div id="view"></div></main></section>
-<script src="admin.js?v=2026100619.6"></script><script src="admin-realtime.js"></script><script>
-(function(){
-  window.__adminAuthFallback=true;
-  function ready(){
-    var loginBox=document.getElementById("loginBox"), setupBox=document.getElementById("setupBox");
-    var tabLogin=document.getElementById("tabLogin"), tabRegister=document.getElementById("tabRegister");
-    var loginForm=document.getElementById("loginForm"), setupForm=document.getElementById("setupForm");
-    var toastEl=document.getElementById("toast");
-    function msg(t){if(toastEl){toastEl.textContent=t;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}else alert(t)}
-    function tab(login){
-      if(loginBox)loginBox.classList.toggle("hidden",!login);
-      if(setupBox)setupBox.classList.toggle("hidden",login);
-      if(tabLogin)tabLogin.classList.toggle("active",login);
-      if(tabRegister)tabRegister.classList.toggle("active",!login);
-    }
-    if(tabLogin)tabLogin.onclick=function(e){e.preventDefault();tab(true)};
-    if(tabRegister)tabRegister.onclick=async function(e){
-      e.preventDefault();
-      try{
-        var client=window.__adminDb||(window.supabase&&window.supabase.createClient("https://hxkhhnrorjxrrqxevvcr.supabase.co","sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8"));
-        if(!client){msg("مكتبة الاتصال لم تتحمل. أعد تحميل الصفحة.");return}
-        window.__adminDb=client;
-        var r=await client.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();
-        if(r.data&&r.data.setup_completed){tab(true);msg("حساب المدير مسجل بالفعل. استخدم تسجيل الدخول.");return}
-        tab(false);
-      }catch(err){console.error(err);msg("تعذر فتح التسجيل: "+(err.message||"خطأ غير معروف"))}
-    };
-    if(loginForm)loginForm.addEventListener("submit",async function(e){
-      e.preventDefault();
-      var button=loginForm.querySelector("button");
-      var email=(document.getElementById("email").value||"").trim().toLowerCase();
-      var password=document.getElementById("password").value||"";
-      if(button){button.disabled=true;button.textContent="جارٍ الدخول…"}
-      try{
-        var client=window.__adminDb||(window.supabase&&window.supabase.createClient("https://hxkhhnrorjxrrqxevvcr.supabase.co","sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8"));
-        if(!client)throw new Error("مكتبة Supabase لم تتحمل");
-        window.__adminDb=client;
-        var r=await client.auth.signInWithPassword({email:email,password:password});
-        if(r.error)throw r.error;
-        msg("تم تسجيل الدخول");
-        if(window.enter){await window.enter()}else{location.reload()}
-      }catch(err){console.error(err);msg("تعذر تسجيل الدخول: "+(err.message||"خطأ غير معروف"))}
-      finally{if(button){button.disabled=false;button.textContent="تسجيل الدخول"}}
-    });
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ready);else ready();
-})();
-</script></body></html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A&S Café · الإدارة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css?v=2026100619.7">
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<section id="loginView" class="login-view">
+  <div class="login-card">
+    <div class="brand-mark">A<span>&</span>S</div>
+    <span class="eyebrow">A&S CAFÉ · BACK OFFICE</span>
+    <h1 id="loginTitle">جاري فتح الإدارة…</h1>
+    <p id="loginText">يتم التحقق من جلسة الإدارة.</p>
+  </div>
+</section>
+<section id="appView" class="app hidden">
+  <aside class="sidebar">
+    <div class="side-brand"><div class="brand-mark">A<span>&</span>S</div><b>A&S Café</b></div>
+    <nav>
+      <button data-view="orders" class="active">🔔 الطلبات</button>
+      <button data-view="products">☕ المنتجات</button>
+      <button data-view="categories">▦ الأقسام</button>
+      <button data-view="tables">🪑 الطاولات</button>
+      <button data-view="settings">⚙ الإعدادات</button>
+    </nav>
+    <div class="admin-lock-badge">🔒 جهاز واحد فقط</div>
+  </aside>
+  <main class="dashboard">
+    <header class="dash-head">
+      <div><span class="eyebrow">A&S CONTROL CENTER</span><h2 id="viewTitle">الطلبات</h2></div>
+      <div class="staff"><span id="staffName">—</span><i id="roleName">OWNER</i></div>
+    </header>
+    <div id="view"></div>
+  </main>
+</section>
+<script src="admin.js?v=2026100619.7"></script>
+</body>
+</html>
