@@ -84,7 +84,7 @@ async function renderView(){
   return settingsView();
 }
 async function orders(){
- const r=await db.from("orders").select("*,cafe_tables(table_number)").order("created_at",{ascending:false}).limit(100);
+ const r=await db.from("orders").select("*,cafe_tables(table_number)").order("created_at",{ascending:false}).limit(1000);
  if(r.error)return $("#view").innerHTML='<div class="notice">تعذر تحميل الطلبات: '+(r.error.message||"")+"</div>";
  const rows=r.data||[],orderIds=rows.map(o=>o.id).filter(Boolean);let items=[],mods=[];
  if(orderIds.length){
@@ -95,8 +95,13 @@ async function orders(){
  }
  const byOrder=new Map();items.forEach(i=>{if(!byOrder.has(i.order_id))byOrder.set(i.order_id,[]);byOrder.get(i.order_id).push(i)});
  const modsByItem=new Map();mods.forEach(m=>{if(!modsByItem.has(m.order_item_id))modsByItem.set(m.order_item_id,[]);modsByItem.get(m.order_item_id).push(m)});
- const open=rows.filter(x=>x.status!=="completed"&&x.status!=="cancelled"),rev=rows.filter(x=>x.status!=="cancelled").reduce((s,x)=>s+Number(x.total||0),0);
- let html='<div class="stats"><div class="stat"><small>إجمالي الطلبات</small><b>'+rows.length+'</b></div><div class="stat"><small>طلبات مفتوحة</small><b>'+open.length+'</b></div><div class="stat"><small>جاهزة</small><b>'+rows.filter(x=>x.status==="ready").length+'</b></div><div class="stat"><small>الإجمالي</small><b>'+money(rev)+'</b></div></div><div class="toolbar"><button class="danger-btn" id="clearOrderHistory">🗑 مسح سجل الطلبات بالكامل</button></div><div class="orders">';
+ const open=rows.filter(x=>x.status!=="completed"&&x.status!=="cancelled");
+ const savedFrom=localStorage.getItem("as_cafe_sales_from")||new Date().toISOString().slice(0,10);
+ const savedTo=localStorage.getItem("as_cafe_sales_to")||new Date().toISOString().slice(0,10);
+ const fromDate=new Date(savedFrom+"T00:00:00"),toDate=new Date(savedTo+"T23:59:59.999");
+ const inPeriod=rows.filter(x=>{const d=new Date(x.created_at);return !Number.isNaN(d.getTime())&&d>=fromDate&&d<=toDate&&x.status!=="cancelled"});
+ const rev=inPeriod.reduce((s,x)=>s+Number(x.total||0),0);
+ let html='<div class="accounting-period"><strong>📊 مدة المحاسبة</strong><label>من <input type="date" id="salesFrom" value="'+savedFrom+'"></label><label>إلى <input type="date" id="salesTo" value="'+savedTo+'"></label><button class="primary-btn" id="applySalesPeriod">حساب</button><span class="period-count">'+inPeriod.length+' طلب داخل الفترة</span></div><div class="stats"><div class="stat"><small>إجمالي الطلبات</small><b>'+rows.length+'</b></div><div class="stat"><small>طلبات مفتوحة</small><b>'+open.length+'</b></div><div class="stat"><small>جاهزة</small><b>'+rows.filter(x=>x.status==="ready").length+'</b></div><div class="stat"><small>إجمالي المبيعات للفترة</small><b>'+money(rev)+'</b></div></div><div class="toolbar"><button class="danger-btn" id="clearOrderHistory">🗑 مسح سجل الطلبات بالكامل</button></div><div class="orders">';
  html+=rows.length?rows.map(o=>{
   const orderItems=byOrder.get(o.id)||[];
   const itemsHtml=orderItems.length?orderItems.map(i=>{
@@ -108,6 +113,9 @@ async function orders(){
   return '<article class="order-card"><div class="order-top"><div><div class="order-no">#'+o.order_number+'</div><span class="table-tag">طاولة '+(o.cafe_tables?o.cafe_tables.table_number:"—")+'</span></div><span class="price">'+money(o.total)+'</span></div><div class="order-meta"><span>📅 '+fmt(o.created_at)+'</span><span>🕐 '+(o.created_at?new Date(o.created_at).toLocaleTimeString("ar-EG",{hour:"2-digit",minute:"2-digit"}):"—")+'</span><span>👤 الزبون: '+(o.customer_name||"—")+(o.customer_phone?" · "+o.customer_phone:"")+'</span></div><div class="items"><div class="invoice-title">تفاصيل الفاتورة</div>'+itemsHtml+'<div class="invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(o.subtotal)+'</b></div><div><span>الضريبة ('+Number(o.tax_percent||0)+"%)</span><b>"+money(o.tax_amount)+'</b></div><div><span>الخدمة ('+Number(o.service_percent||0)+"%)</span><b>"+money(o.service_amount)+'</b></div><div class="invoice-total"><span>الإجمالي</span><strong>'+money(o.total)+'</strong></div></div>'+(o.customer_note?'<div class="invoice-note order-note">ملاحظة الطلب: '+o.customer_note+"</div>":"")+'</div><div class="status-row"><select class="status-select" data-status="'+o.id+'">'+opts+'</select><select class="eta-select" data-eta="'+o.id+'"><option value="">بدون وقت تقديري</option><option value="15">بعد 15 دقيقة</option><option value="20">بعد 20 دقيقة</option><option value="30">بعد 30 دقيقة</option><option value="45">بعد 45 دقيقة</option><option value="60">بعد ساعة</option><option value="90">بعد ساعة ونصف</option><option value="120">بعد ساعتين</option></select></div><div class="eta-line">'+(o.estimated_ready_at?"موعد متوقع: <b>"+fmt(o.estimated_ready_at)+"</b>":"يمكن ترك الوقت فارغًا.")+"</div></article>";
  }).join(""):'<div class="notice">لا توجد طلبات حتى الآن.</div>';
  $("#view").innerHTML=html+"</div>";
+ const applyPeriod=()=>{const a=$("#salesFrom").value,b=$("#salesTo").value;if(!a||!b)return toast("اختار تاريخ البداية والنهاية");if(a>b)return toast("تاريخ البداية يجب أن يكون قبل تاريخ النهاية");localStorage.setItem("as_cafe_sales_from",a);localStorage.setItem("as_cafe_sales_to",b);orders()};
+ $("#applySalesPeriod").onclick=applyPeriod;
+
  document.querySelector("#clearOrderHistory").onclick=async()=>{if(!confirm("سيتم حذف سجل الطلبات فقط. لن يتم حذف المنتجات أو الأقسام أو الطاولات أو الإضافات أو إعدادات الكافيه. هل أنت متأكد؟"))return;const d=await db.from("orders").delete().neq("id","00000000-0000-0000-0000-000000000000");if(d.error)return toast("تعذر مسح سجل الطلبات: "+d.error.message);toast("تم مسح سجل الطلبات فقط");orders()};document.querySelectorAll("[data-status]").forEach(s=>s.onchange=async()=>{const rr=await db.from("orders").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.status);if(rr.error)toast("تعذر تحديث الحالة: "+rr.error.message);else orders()});
  document.querySelectorAll("[data-eta]").forEach(s=>{const o=rows.find(x=>x.id===s.dataset.eta);if(o?.estimated_ready_at){const diff=Math.round((new Date(o.estimated_ready_at)-Date.now())/60000);const m=[15,20,30,45,60,90,120].find(n=>Math.abs(n-diff)<=2);if(m)s.value=String(m)}s.onchange=async()=>{const iso=s.value?new Date(Date.now()+Number(s.value)*60000).toISOString():null;const rr=await db.from("orders").update({estimated_ready_at:iso,updated_at:new Date().toISOString()}).eq("id",s.dataset.eta);if(rr.error)toast("تعذر حفظ الموعد");else orders()}});
 async function products(){
