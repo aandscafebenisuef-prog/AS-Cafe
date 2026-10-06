@@ -2,28 +2,35 @@ const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
 const SUPABASE_KEY="sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8";
 function restBuilder(table,method="GET",payload=null){
  let selectText="*";let filters=[];let orderText="";let limitValue=null;let wantSingle=false;let returnRep=false;
+ async function run(){
+  try{
+   let url=SUPABASE_URL+"/rest/v1/"+table;
+   const q=[];
+   if(method==="GET")q.push("select="+encodeURIComponent(selectText));
+   filters.forEach(x=>q.push(x));if(orderText)q.push("order="+orderText);if(limitValue)q.push("limit="+limitValue);
+   if(q.length)url+="?"+q.join("&");
+   const headers={apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json"};
+   if(method==="POST")headers.Prefer=returnRep?"return=representation":"return=minimal";
+   const res=await fetch(url,{method,headers,body:method==="POST"?JSON.stringify(payload):undefined});
+   const raw=await res.text();let data=raw?JSON.parse(raw):null;
+   if(!res.ok)return {data:null,error:{message:data?.message||data?.error||raw||("HTTP "+res.status),code:data?.code}};
+   if(wantSingle&&Array.isArray(data)){
+    if(data.length===0)return {data:null,error:null};
+    if(data.length>1)return {data:null,error:{message:"Multiple rows returned"}};
+    data=data[0];
+   }
+   return {data,error:null};
+  }catch(error){return {data:null,error}};
+ }
  const api={
-  select(cols="*"){selectText=cols;return api},
+  select(cols="*"){selectText=cols;if(method==="POST")returnRep=true;return api},
   eq(col,val){filters.push(col+"=eq."+encodeURIComponent(String(val)));return api},
   is(col,val){filters.push(col+"=is."+String(val));return api},
   order(col,opts={}){orderText=col+(opts.ascending===false?".desc":".asc");return api},
   limit(n){limitValue=n;return api},
-  maybeSingle(){wantSingle=true;return api.then()},
-  single(){wantSingle=true;return api.then()},
-  then(resolve,reject){(async()=>{try{
-    let url=SUPABASE_URL+"/rest/v1/"+table;
-    const q=[];
-    if(method==="GET")q.push("select="+encodeURIComponent(selectText));
-    filters.forEach(x=>q.push(x));if(orderText)q.push("order="+orderText);if(limitValue)q.push("limit="+limitValue);
-    if(q.length)url+="?"+q.join("&");
-    const headers={apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json"};
-    if(method==="POST"){headers.Prefer=returnRep?"return=representation":"return=minimal"}
-    const res=await fetch(url,{method,headers,body:method==="POST"?JSON.stringify(payload):undefined});
-    const raw=await res.text();let data=raw?JSON.parse(raw):null;
-    if(!res.ok){resolve({data:null,error:{message:data?.message||data?.error||raw||("HTTP "+res.status),code:data?.code}});return}
-    if(wantSingle){if(Array.isArray(data)){if(data.length===0){resolve({data:null,error:null});return}if(data.length>1){resolve({data:null,error:{message:"Multiple rows returned"}});return}data=data[0]}}
-    resolve({data,error:null});
-   }catch(error){resolve({data:null,error})}})().catch(reject)}
+  maybeSingle(){wantSingle=true;return run()},
+  single(){wantSingle=true;return run()},
+  then(resolve,reject){return run().then(resolve,reject)}
  };
  return api;
 }
@@ -31,7 +38,7 @@ const db={
  from(table){
   return {
    select(cols="*"){return restBuilder(table,"GET").select(cols)},
-   insert(payload){const b=restBuilder(table,"POST",payload);b._select=function(cols){return b.select(cols)};return new Proxy(b,{get(target,key){if(key==="select")return function(cols){return target.select(cols)};if(key==="single")return target.single.bind(target);if(key==="then")return target.then.bind(target);return target[key]}})}
+   insert(payload){return restBuilder(table,"POST",payload)}
   };
  },
  functions:{async invoke(name,{body}={}){try{const res=await fetch(SUPABASE_URL+"/functions/v1/"+name,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json().catch(()=>null);return res.ok?{data,error:null}:{data:null,error:{message:data?.error||"Function request failed"}}}catch(error){return {data:null,error}}}}
