@@ -59,16 +59,8 @@ async function loadQuery(label,query){
   return {label:label,data:result.data,error:result.error||null};
  }catch(error){console.error("A&S load exception:",label,error);return {label:label,data:null,error:error}}
 }
-function renderFallbackTables(){
- const fallback=Array.from({length:10},(_,i)=>({id:null,table_number:String(i+1),active:true,fallback:true}));
- if(!state.tables.length){state.tables=fallback;renderTables();}
-}
-function bindBootTables(){
- document.querySelectorAll(".boot-table").forEach(function(b){b.onclick=function(){const n=b.dataset.tableNumber;const local=state.tables.find(function(t){return String(t.table_number)===String(n)});state.table=local||{id:null,table_number:String(n),active:true,fallback:true};renderTables();$("#tableBadge").textContent="طاولة "+n;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"});}});
-}
 async function init(){
- renderFallbackTables();
- bindBootTables();
+
  const results=await Promise.all([
   loadQuery("الإعدادات",db.from("cafe_settings").select("cafe_name,logo_url,currency,tax_percent,service_percent").limit(1)),
   loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}})),
@@ -79,15 +71,15 @@ async function init(){
   loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("product_id,group_id"))
  ]);
  state.settings=results[0].data||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
- if(results[1].data&&results[1].data.length){state.tables=results[1].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{renderFallbackTables();}
+ if(results[1].data&&results[1].data.length){state.tables=results[1].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{state.tables=[];}
  state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
- renderTables();bindBootTables();renderCategories();renderProducts();updateCart();
+ renderTables();renderCategories();renderProducts();updateCart();
  const failed=results.filter(function(x){return x.error});
  if(failed.length){
   const names=failed.map(function(x){return x.label}).join("، ");
   console.error("A&S data loading failures:",failed);
-  if(failed.some(function(x){return x.label==="الطاولات"})) toast("تعذر تحميل الطاولات من الخادم؛ تم تفعيل الطاولات المؤقتة.");
+  if(failed.some(function(x){return x.label==="الطاولات"})) toast("تعذر تحميل الطاولات من الخادم؛ لن يتم عرض طاولات وهمية.");
   else if(failed.some(function(x){return x.label==="المنتجات"||x.label==="الأقسام"})) toast("تعذر تحميل المنيو بالكامل؛ حاول تحديث الصفحة.");
   else console.warn("Optional A&S data unavailable:",names);
  }
