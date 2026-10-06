@@ -61,18 +61,12 @@ async function loadQuery(label,query){
 }
 async function init(){
 
- const results=await Promise.all([
-  loadQuery("الإعدادات",db.from("cafe_settings").select("cafe_name,logo_url,currency,tax_percent,service_percent").limit(1)),
-  loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}})),
-  loadQuery("الأقسام",db.from("categories").select("id,name,name_en,icon,image_url,sort_order,active").eq("active",true).order("sort_order")),
-  loadQuery("المنتجات",db.from("products").select("id,category_id,name,name_en,description,price,image_url,active,featured,sort_order").eq("active",true).order("sort_order")),
-  loadQuery("مجموعات الإضافات",db.from("modifier_groups").select("id,name,name_en,min_select,max_select,active").eq("active",true).order("name")),
-  loadQuery("الإضافات",db.from("modifiers").select("id,group_id,name,name_en,price_delta,active,sort_order").eq("active",true).order("sort_order")),
-  loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("product_id,group_id"))
- ]);
- state.settings=results[0].data||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
- if(results[1].data&&results[1].data.length){state.tables=results[1].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{state.tables=[];}
- state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
+ const menuResult=await loadQuery("المنيو",db.functions.invoke("customer-gateway",{body:{action:"get_menu"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data||null,error:null}}));
+ const tableResult=await loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}}));
+ const results=[tableResult,menuResult];
+ state.settings=results[1].data?.settings||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
+ if(results[0].data&&results[0].data.length){state.tables=results[0].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{state.tables=[];}
+ state.categories=results[1].data?.categories||[];state.products=results[1].data?.products||[];state.groups=results[1].data?.groups||[];state.modifiers=results[1].data?.modifiers||[];state.links=results[1].data?.links||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
  renderTables();renderCategories();renderProducts();updateCart();
  const failed=results.filter(function(x){return x.error});
