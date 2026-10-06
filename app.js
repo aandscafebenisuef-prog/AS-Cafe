@@ -140,6 +140,16 @@ function changeQty(key,d){const i=state.cart.find(function(x){return x.key===key
 function openCart(){$("#cartDrawer").classList.add("open");$("#drawerBackdrop").classList.add("show")}
 function closeCart(){$("#cartDrawer").classList.remove("open");$("#drawerBackdrop").classList.remove("show")}
 function statusLabel(s){return({new:"جديد — وصل للكاشير",confirmed:"تم تأكيد الطلب",preparing:"جاري التحضير",ready:"الطلب جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"تم إلغاء الطلب"})[s]||s}
+function renderCustomerInvoice(order, cartItems){
+ const box=$("#customerInvoice"); if(!box)return;
+ const items=Array.isArray(cartItems)?cartItems:[];
+ const rows=items.map(function(i){
+  const mods=i.mods&&i.mods.length?'<div class="customer-invoice-mod">'+i.mods.map(function(m){return esc(m.name)+(Number(m.price_delta)?' · +'+money(m.price_delta):"")}).join(" · ")+'</div>':"";
+  const note=i.note?'<div class="customer-invoice-note">ملاحظة: '+esc(i.note)+'</div>':"";
+  return '<div class="customer-invoice-item"><div><b>'+esc(i.product.name)+'</b><small>'+Number(i.qty||1)+' × '+money(i.unit)+'</small>'+mods+note+'</div><strong>'+money(Number(i.unit)*Number(i.qty||1))+'</strong></div>';
+ }).join("");
+ box.innerHTML='<div class="customer-invoice-title">تفاصيل الفاتورة</div>'+rows+'<div class="customer-invoice-totals"><div><span>المجموع الفرعي</span><b>'+money(order.subtotal)+'</b></div><div><span>الضريبة ('+Number(order.tax_percent||0)+'%)</span><b>'+money(order.tax_amount)+'</b></div><div><span>الخدمة ('+Number(order.service_percent||0)+'%)</span><b>'+money(order.service_amount)+'</b></div><div class="customer-invoice-total"><span>الإجمالي</span><strong>'+money(order.total)+'</strong></div></div>';
+}
 async function refreshCustomerOrder(){if(!state.trackingToken)return;const r=await db.functions.invoke("customer-gateway",{body:{action:"get_order",token:state.trackingToken}});if(r.error||!r.data?.order)return;const o=r.data.order;$("#customerStatus").textContent=statusLabel(o.status);$("#customerStaff").textContent=(o.assigned_staff_name||"لم يبدأ التجهيز بعد")+(o.assigned_at?" · "+new Date(o.assigned_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"");$("#customerCreated").textContent=new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"});$("#customerEta").textContent=o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده";if(o.status==="completed"||o.status==="cancelled"){clearInterval(state.trackingTimer);state.trackingTimer=null}}
 async function sendOrder(){
  if(!state.table)return toast("اختار رقم الطاولة أولاً");
@@ -174,7 +184,7 @@ async function sendOrder(){
  }
 
  closeCart();
- $("#successNumber").textContent="#"+created.data.order.order_number;
+ $("#successNumber").textContent="#"+created.data.order.order_number; renderCustomerInvoice(created.data.order, state.cart);
  state.trackingToken=created.data.tracking_token;
  $("#successModal").classList.remove("hidden");
  state.cart=[];$("#orderNote").value="";$("#customerName").value="";$("#customerPhone").value="";
