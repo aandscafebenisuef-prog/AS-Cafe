@@ -101,6 +101,7 @@ document.addEventListener("DOMContentLoaded",function(){
     });
     if(tl)tl.addEventListener("click",function(){showTab("login")});
     if(tr)tr.addEventListener("click",async function(){
+      if(!db){toast("تعذر الاتصال بالخادم. أعد تحميل الصفحة.");return}
       const check=await db.from("app_setup").select("setup_completed").eq("id",true).maybeSingle();
       if(check.error){toast("تعذر التحقق من حالة التسجيل");return}
       if(check.data?.setup_completed){showTab("login");toast("حساب المدير مسجل بالفعل. استخدم تسجيل الدخول.");return}
