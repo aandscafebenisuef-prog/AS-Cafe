@@ -1,5 +1,5 @@
 const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
-const SUPABASE_KEY="sb_publishable_V6MAGNlvc-PxgVMQUqnDKg_jJppxBa8";
+const SUPABASE_KEY=null;
 const ADMIN_GATEWAY=SUPABASE_URL+"/functions/v1/admin-gateway";
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
 let profile=null,settings=null,currentView="orders",lockTimer=null;
@@ -125,7 +125,7 @@ async function products(){
  $("#view").innerHTML=html;$("#newProduct").onclick=()=>productForm(cats);$("#productSearch").oninput=e=>document.querySelectorAll("tbody tr").forEach(r=>r.style.display=r.textContent.includes(e.target.value)?"":"none");document.querySelectorAll("[data-edit-product]").forEach(b=>b.onclick=()=>productForm(cats,rows.find(x=>x.id===b.dataset.editProduct)));document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({active:b.dataset.active!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.toggle);if(r.error)return toast("تعذر تغيير حالة المنتج");products()});document.querySelectorAll("[data-notes-toggle]").forEach(b=>b.onclick=async()=>{const r=await db.from("products").update({notes_enabled:b.dataset.notesEnabled!=="true",updated_at:new Date().toISOString()}).eq("id",b.dataset.notesToggle);if(r.error)return toast("تعذر تغيير إعداد الملاحظات");products()});
 }
 function productForm(cats,item){
-  const opts=cats.map(c=>'<option value="'+c.id+'" '+(item&&item.category_id===c.id?"selected":"")+">'+c.name+"</option>").join("");
+  const opts=cats.map(function(c){return "<option value=\"" + c.id + "\" " + (item&&item.category_id===c.id?"selected":"") + ">" + c.name + "</option>";}).join("");
   const currentImage=item&&item.image_url?item.image_url:"";
   $("#view").innerHTML='<div class="form-card"><div class="notice">'+(item?"تعديل بيانات المنتج.":"إضافة منتج جديد للمنيو.")+'</div><form id="pf" class="form-grid"><label>اسم المنتج<input name="name" value="'+(item?item.name:"")+'" required></label><label>السعر<input name="price" type="number" step=".01" value="'+(item?item.price:"")+'" required></label><label>القسم<select name="category_id">'+opts+'</select></label><label>صورة المنتج<input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><small style="color:var(--muted);display:block;margin-top:6px">رفع مباشر · JPG / PNG / WEBP / GIF · حتى 5MB</small>'+(currentImage?'<img id="productImagePreview" src="'+currentImage+'" style="width:100px;height:100px;object-fit:cover;border-radius:12px;margin-top:10px;border:1px solid var(--line)">':'<img id="productImagePreview" class="hidden" style="width:100px;height:100px;object-fit:cover;border-radius:12px;margin-top:10px;border:1px solid var(--line)">')+'</label><label>الوصف<input name="description" value="'+(item&&item.description||"")+'"></label><div><button class="primary-btn">'+(item?"حفظ التعديلات":"حفظ المنتج")+'</button> <button type="button" class="secondary-btn" id="cancelProduct">إلغاء</button></div></form></div>';
   $("#cancelProduct").onclick=products;
