@@ -127,7 +127,7 @@ function updateCart(){
   return `
    <div class="cart-item">
     <div class="cart-item-top"><div><h4>${esc(i.product.name)}</h4><small>${esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")}${i.note?" · "+esc(i.note):""}</small></div><b>${money(i.unit*i.qty)}</b></div>
-    <div class="qty"><button data-minus="${i.key}">−</button><b>${i.qty}</b><button data-plus="${i.key}">+</button><button data-remove="${i.key}" style="margin-right:auto;color:#e88989">حذف</button></div>
+    <div class="qty">${i.mods.length?"<b>1</b>":"<button data-minus=\""+i.key+"\">−</button><b>"+i.qty+"</b><button data-plus=\""+i.key+"\">+</button>"}<button data-remove="${i.key}" style="margin-right:auto;color:#e88989">حذف</button></div>
    </div>`;
  }).join(""):'<div class="empty">السلة فارغة.<br>اختار حاجة تحبها من المنيو ☕</div>';
  document.querySelectorAll("[data-minus]").forEach(function(b){b.onclick=function(){changeQty(b.dataset.minus,-1)}});
