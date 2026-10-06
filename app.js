@@ -126,19 +126,45 @@ function closeCart(){$("#cartDrawer").classList.remove("open");$("#drawerBackdro
 function statusLabel(s){return({new:"جديد — وصل للكاشير",confirmed:"تم تأكيد الطلب",preparing:"جاري التحضير",ready:"الطلب جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"تم إلغاء الطلب"})[s]||s}
 async function refreshCustomerOrder(){if(!state.trackingToken)return;const r=await db.functions.invoke("customer-gateway",{body:{action:"get_order",token:state.trackingToken}});if(r.error||!r.data?.order)return;const o=r.data.order;$("#customerStatus").textContent=statusLabel(o.status);$("#customerStaff").textContent=(o.assigned_staff_name||"لم يبدأ التجهيز بعد")+(o.assigned_at?" · "+new Date(o.assigned_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"");$("#customerCreated").textContent=new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"});$("#customerEta").textContent=o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده";if(o.status==="completed"||o.status==="cancelled"){clearInterval(state.trackingTimer);state.trackingTimer=null}}
 async function sendOrder(){
- if(!state.table)return toast("اختار رقم الطاولة أولاً");if(!state.cart.length)return toast("السلة فارغة");
- if(!state.table.id){const tr=await db.from("cafe_tables").select("id,table_number,active").eq("table_number",state.table.table_number).eq("active",true).maybeSingle();if(tr.error||!tr.data)return toast("تعذر تأكيد الطاولة من الخادم، حاول مرة أخرى");state.table=tr.data;}const customerName=$("#customerName").value.trim();if(!customerName)return toast("اسم الزبون مطلوب قبل تأكيد الطلب");
+ if(!state.table)return toast("اختار رقم الطاولة أولاً");
+ if(!state.cart.length)return toast("السلة فارغة");
+ const customerName=$("#customerName").value.trim();
+ if(!customerName)return toast("اسم الزبون مطلوب قبل تأكيد الطلب");
  const btn=$("#sendOrder");btn.disabled=true;btn.textContent="جاري إرسال الطلب…";
- const subtotal=state.cart.reduce((s,i)=>s+i.unit*i.qty,0),tax=subtotal*Number(state.settings.tax_percent||0)/100,service=subtotal*Number(state.settings.service_percent||0)/100;
- const token=crypto.randomUUID()+crypto.randomUUID();
- const order={table_id:state.table.id,status:"new",order_type:"dine_in",customer_name:customerName,customer_phone:$("#customerPhone").value.trim()||null,customer_note:$("#orderNote").value.trim()||null,subtotal:subtotal,tax_percent:state.settings.tax_percent,tax_amount:tax,service_percent:state.settings.service_percent,service_amount:service,total:subtotal+tax+service,customer_tracking_token:token};
- const inserted=await db.from("orders").insert(order).select("id,order_number,created_at").single();
- if(inserted.error){btn.disabled=false;btn.textContent="إرسال الطلب →";console.error(inserted.error);return toast("حصل خطأ أثناء إرسال الطلب")}
- const rows=state.cart.map(i=>({order_id:inserted.data.id,product_id:i.product.id,product_name:i.product.name,unit_price:i.unit,quantity:i.qty,line_total:i.unit*i.qty,notes:null}));
- const items=await db.from("order_items").insert(rows).select("id");
- if(items.error){console.error(items.error);toast("تم إنشاء الطلب لكن تعذر حفظ التفاصيل");btn.disabled=false;btn.textContent="إرسال الطلب →";return}
- const mods=[];state.cart.forEach((i,idx)=>i.mods.forEach(m=>mods.push({order_item_id:items.data[idx].id,modifier_id:m.id,modifier_name:m.name,price_delta:m.price_delta})));
- if(mods.length)await db.from("order_item_modifiers").insert(mods);
- closeCart();$("#successNumber").textContent="#"+inserted.data.order_number;state.trackingToken=token;$("#successModal").classList.remove("hidden");state.cart=[];$("#orderNote").value="";$("#customerName").value="";$("#customerPhone").value="";updateCart();btn.disabled=false;btn.textContent="إرسال الطلب →";await refreshCustomerOrder();if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=setInterval(refreshCustomerOrder,4000);
+
+ const payload={
+  action:"create_order",
+  table_id:state.table.id,
+  customer_name:customerName,
+  customer_phone:$("#customerPhone").value.trim()||null,
+  customer_note:$("#orderNote").value.trim()||null,
+  items:state.cart.map(function(i){return {
+   product_id:i.product.id,
+   quantity:i.qty,
+   modifier_ids:i.mods.map(function(m){return m.id})
+  }})
+ };
+ if(!payload.table_id){
+  const tr=await db.from("cafe_tables").select("id,table_number,active").eq("table_number",state.table.table_number).eq("active",true).maybeSingle();
+  if(tr.error||!tr.data){btn.disabled=false;btn.textContent="إرسال الطلب →";return toast("تعذر تأكيد الطاولة من الخادم");}
+  payload.table_id=tr.data.id;state.table=tr.data;
+ }
+
+ const created=await db.functions.invoke("customer-gateway",{body:payload});
+ if(created.error||!created.data?.order){
+  console.error(created.error||created.data);
+  btn.disabled=false;btn.textContent="إرسال الطلب →";
+  return toast(created.error?.message||created.data?.error||"حصل خطأ أثناء إرسال الطلب");
+ }
+
+ closeCart();
+ $("#successNumber").textContent="#"+created.data.order.order_number;
+ state.trackingToken=created.data.tracking_token;
+ $("#successModal").classList.remove("hidden");
+ state.cart=[];$("#orderNote").value="";$("#customerName").value="";$("#customerPhone").value="";
+ updateCart();btn.disabled=false;btn.textContent="إرسال الطلب →";
+ await refreshCustomerOrder();
+ if(state.trackingTimer)clearInterval(state.trackingTimer);
+ state.trackingTimer=setInterval(refreshCustomerOrder,4000);
 }
 $("#cartBtn").onclick=openCart;$("#closeCart").onclick=closeCart;$("#drawerBackdrop").onclick=closeCart;$("#sendOrder").onclick=sendOrder;$("#newOrder").onclick=function(){closeModal("successModal");state.trackingToken=null;if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=null;};$("#closeProduct").onclick=function(){closeModal("productModal")};init();
