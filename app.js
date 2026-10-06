@@ -63,9 +63,9 @@ async function loadQuery(label,query){
    query,
    new Promise(function(resolve){setTimeout(function(){resolve({data:null,error:{message:"انتهت مهلة تحميل "+label}})},10000)})
   ]);
-  if(result.error)console.error("A&S load failure:",label,result.error);
+  if(result.error)console.error("M&H load failure:",label,result.error);
   return {label:label,data:result.data,error:result.error||null};
- }catch(error){console.error("A&S load exception:",label,error);return {label:label,data:null,error:error}}
+ }catch(error){console.error("M&H load exception:",label,error);return {label:label,data:null,error:error}}
 }
 async function init(){
  loadTrackingTokens();renderTrackingBadge();
@@ -73,7 +73,7 @@ async function init(){
  const menuResult=await loadQuery("المنيو",db.functions.invoke("customer-gateway",{body:{action:"get_menu"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data||null,error:null}}));
  const tableResult=await loadQuery("الطاولات",db.functions.invoke("customer-gateway",{body:{action:"get_tables"}}).then(function(r){return r.error?{data:null,error:r.error}:{data:r.data?.tables||[],error:null}}));
  const results=[tableResult,menuResult];
- state.settings=results[1].data?.settings||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
+ state.settings=results[1].data?.settings||{tax_percent:14,service_percent:8,cafe_name:"M&H"};
  if(results[0].data&&results[0].data.length){state.tables=results[0].data.sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});}else{state.tables=[];}
  state.categories=results[1].data?.categories||[];state.products=results[1].data?.products||[];state.groups=results[1].data?.groups||[];state.modifiers=results[1].data?.modifiers||[];state.links=results[1].data?.links||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
@@ -81,10 +81,10 @@ async function init(){
  const failed=results.filter(function(x){return x.error});
  if(failed.length){
   const names=failed.map(function(x){return x.label}).join("، ");
-  console.error("A&S data loading failures:",failed);
+  console.error("M&H data loading failures:",failed);
   if(failed.some(function(x){return x.label==="الطاولات"})) toast("تعذر تحميل الطاولات من الخادم؛ لن يتم عرض طاولات وهمية.");
   else if(failed.some(function(x){return x.label==="المنتجات"||x.label==="الأقسام"})) toast("تعذر تحميل المنيو بالكامل؛ حاول تحديث الصفحة.");
-  else console.warn("Optional A&S data unavailable:",names);
+  else console.warn("Optional M&H data unavailable:",names);
  }
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
@@ -108,7 +108,7 @@ function renderProducts(){
     <div class="product-img" style="background-image:url('${image}')"></div>
     <div class="product-body">
      <h3>${esc(p.name)}</h3>
-     <p>${esc(p.description||"اختيار فاخر من A&S Café.")}</p>
+     <p>${esc(p.description||"اختيار فاخر من M&H.")}</p>
      <div class="price-row"><span class="price">${money(p.price)}</span><button class="add" data-product="${p.id}">+</button></div>
     </div>
    </article>`;
@@ -122,7 +122,7 @@ function openProduct(id){
  const groupsHtml=groups.map(function(g){const opts=state.modifiers.filter(function(m){return m.group_id===g.id}).map(function(m){return '<button type="button" class="mod-option" data-group="'+g.id+'" data-mod="'+m.id+'">'+esc(m.name)+(Number(m.price_delta)?' (+'+money(m.price_delta)+')':"")+"</button>"}).join("");return '<div class="mod-group"><div class="mod-head"><b>'+esc(g.name)+'</b><small>'+(Number(g.min_select||0)>0?"إجباري":"اختياري")+(g.max_select===1?" · اختيار واحد":" · اختيارات")+'</small></div><div class="mod-options">'+opts+"</div></div>"}).join("");
  const qtyHtml=hasModifiers?"":'<div class="product-qty"><span>الكمية</span><div class="qty"><button type="button" id="productQtyMinus">−</button><b id="productQty">1</b><button type="button" id="productQtyPlus">+</button></div></div>';
  const noteHtml=p.notes_enabled?'<label class="product-note"><span>ملاحظات على المنتج (اختياري)</span><textarea id="productNote" maxlength="500" placeholder="مثلاً: بدون سكر، سخن، ..."></textarea></label>':"";
- $("#productModalBody").innerHTML='<div class="modal-product-img" style="background-image:url(\''+imgUrl(p).replace(/\\x27/g,"%27")+'\')"></div><span class="eyebrow">A&S SELECTION</span><h2>'+esc(p.name)+'</h2><p>'+esc(p.description||"اختيار فاخر من A&S Café.")+'</p>'+groupsHtml+qtyHtml+noteHtml+'<button class="primary-btn" id="addConfigured">إضافة للسلة · '+money(p.price)+"</button>";
+ $("#productModalBody").innerHTML='<div class="modal-product-img" style="background-image:url(\''+imgUrl(p).replace(/\\x27/g,"%27")+'\')"></div><span class="eyebrow">M&H SELECTION</span><h2>'+esc(p.name)+'</h2><p>'+esc(p.description||"اختيار فاخر من M&H.")+'</p>'+groupsHtml+qtyHtml+noteHtml+'<button class="primary-btn" id="addConfigured">إضافة للسلة · '+money(p.price)+"</button>";
  document.querySelectorAll(".mod-option").forEach(function(btn){btn.onclick=function(){const g=state.groups.find(function(x){return x.id===btn.dataset.group});if(g.max_select===1)document.querySelectorAll('[data-group="'+g.id+'"]').forEach(function(x){x.classList.remove("selected")});btn.classList.toggle("selected")}});
  let qty=1;if(!hasModifiers){$("#productQtyMinus").onclick=function(){qty=Math.max(1,qty-1);$("#productQty").textContent=qty};$("#productQtyPlus").onclick=function(){qty=Math.min(50,qty+1);$("#productQty").textContent=qty}}
  $("#addConfigured").onclick=function(){const selected=[...document.querySelectorAll(".mod-option.selected")].map(function(x){return state.modifiers.find(function(m){return m.id===x.dataset.mod})}).filter(Boolean);const total=Number(p.price)+selected.reduce(function(s,m){return s+Number(m.price_delta||0)},0);state.cart.push({key:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()),product:p,qty:hasModifiers?1:qty,mods:selected,unit:total,note:p.notes_enabled?(($("#productNote").value||"").trim()):""});updateCart();closeModal("productModal");toast("تمت الإضافة إلى السلة")};
