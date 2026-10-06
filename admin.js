@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded",function(){
     }
     if(sf)sf.addEventListener("submit",firstSetup);
     if(ef)ef.addEventListener("submit",employeeSignup);
-    if(lf)lf.addEventListener("submit",async function(e){
+    if(lf&&!window.__adminAuthFallback)lf.addEventListener("submit",async function(e){
       e.preventDefault();
       const email=$("#email").value.trim().toLowerCase(),password=$("#password").value;
       const button=lf.querySelector("button");
