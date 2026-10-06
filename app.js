@@ -51,7 +51,7 @@ async function fetchTrackedOrder(entry){const r=await db.functions.invoke("custo
 async function renderMyOrders(){const box=$("#myOrdersList");if(!box)return;box.innerHTML='<div class="empty">جاري تحميل طلباتك…</div>';const rows=await Promise.all(state.trackingTokens.map(fetchTrackedOrder));const valid=rows.map(function(o,n){return {order:o,entry:state.trackingTokens[n]}}).filter(function(x){return x.order});if(!valid.length){box.innerHTML='<div class="empty">مفيش طلبات محفوظة على الجهاز لحد دلوقتي.<br>بعد ما تعمل طلب هتلاقيه هنا تلقائيًا.</div>';return}box.innerHTML=valid.map(function(x){const o=x.order;return '<article class="tracked-order"><div class="tracked-order-head"><strong>#'+esc(o.order_number||x.entry.order_number||"----")+'</strong><span>طاولة '+esc(o.table_number||"—")+'</span></div><div class="tracked-status">'+esc(statusLabel(o.status))+'</div><div class="tracked-meta"><span>وقت الطلب<br><b>'+new Date(o.created_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"})+'</b></span><span>المتوقع<br><b>'+(o.estimated_ready_at?new Date(o.estimated_ready_at).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"لم يتم تحديده")+'</b></span></div><button class="track-open" data-token="'+esc(x.entry.token)+'">متابعة الطلب</button></article>'}).join("");box.querySelectorAll("[data-token]").forEach(function(b){b.onclick=function(){state.trackingToken=b.dataset.token;closeModal("myOrdersModal");$("#customerInvoice").innerHTML="";$("#successModal").classList.remove("hidden");refreshCustomerOrder();if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=setInterval(refreshCustomerOrder,4000)}})}
 async function refreshMyOrders(){if(!$("#myOrdersModal")||$("#myOrdersModal").classList.contains("hidden"))return;await renderMyOrders()}
 function openMyOrders(){renderMyOrders();$("#myOrdersModal").classList.remove("hidden");if(state.trackingTimer)clearInterval(state.trackingTimer);state.trackingTimer=setInterval(refreshMyOrders,4000)}
-const $=s=>document.querySelector(s);
+const $=s=>document.querySelector(s);\ndocument.addEventListener("click",function(e){const b=e.target.closest("#tables [data-table]");if(!b)return;e.preventDefault();e.stopPropagation();selectTableById(b.dataset.table)},true);
 const money=n=>Number(n||0).toFixed(2)+" EGP";
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2400)}
 function imgUrl(p){return p.image_url||"https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80"}
@@ -87,9 +87,9 @@ async function init(){
  }
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
+function selectTableById(id){const t=state.tables.find(function(x){return x.id===id});if(!t)return;state.table=t;renderTables();$("#tableBadge").textContent="طاولة "+state.table.table_number;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"})}
 function renderTables(){
  $("#tables").innerHTML=state.tables.map(function(t){return '<button type="button" class="table-btn '+(state.table&&state.table.id===t.id?"active":"")+'" data-table="'+t.id+'">طاولة '+esc(t.table_number)+"</button>"}).join("");
- $("#tables").onclick=function(e){const b=e.target.closest("[data-table]");if(!b)return;e.preventDefault();e.stopPropagation();state.table=state.tables.find(function(t){return t.id===b.dataset.table});if(!state.table)return;renderTables();$("#tableBadge").textContent="طاولة "+state.table.table_number;$("#tableBadge").classList.add("ready");$("#menuSection").scrollIntoView({behavior:"smooth"})};
 }
 function renderCategories(){
  let html='<button class="chip '+(!state.category?"active":"")+'" data-cat="">الكل</button>';
