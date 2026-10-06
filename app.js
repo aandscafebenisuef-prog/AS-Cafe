@@ -131,7 +131,7 @@ function updateCart(){
  const service=subtotal*Number(state.settings?.service_percent||0)/100;
  $("#subtotal").textContent=money(subtotal);$("#tax").textContent=money(tax);$("#service").textContent=money(service);$("#total").textContent=money(subtotal+tax+service);
  $("#cartItems").innerHTML=state.cart.length?state.cart.map(function(i){
-  return \`
+  return `
    <div class="cart-item">
     <div class="cart-item-top"><div><h4>${esc(i.product.name)}</h4><small>${esc(i.mods.map(function(m){return m.name}).join(" · ")||"بدون إضافات")}</small></div><b>${money(i.unit*i.qty)}</b></div>
     <div class="qty"><button data-minus="${i.key}">−</button><b>${i.qty}</b><button data-plus="${i.key}">+</button><button data-remove="${i.key}" style="margin-right:auto;color:#e88989">حذف</button></div>
