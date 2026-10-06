@@ -99,7 +99,18 @@ function renderCategories(){
 }
 function renderProducts(){
  const list=state.products.filter(function(p){return !state.category||p.category_id===state.category});
- $("#products").innerHTML=list.length?list.map(function(p){return '<article class="product"><div class="product-img" style="background-image:url(\''+imgUrl(p).replace(/\\x27/g,"%27")+'\')"></div><div class="product-body"><h3>'+esc(p.name)+'</h3><p>'+esc(p.description||"اختيار فاخر من A&S Café.")+'</p><div class="price-row"><span class="price">'+money(p.price)+'</span><button class="add" data-product="'+p.id+'">+</button></div></div></article>"}).join(""):'<div class="empty">لا توجد منتجات في هذا القسم.</div>';
+ $("#products").innerHTML=list.length?list.map(function(p){
+  const image=imgUrl(p).replace(/'/g,"%27");
+  return `
+   <article class="product">
+    <div class="product-img" style="background-image:url('${image}')"></div>
+    <div class="product-body">
+     <h3>${esc(p.name)}</h3>
+     <p>${esc(p.description||"اختيار فاخر من A&S Café.")}</p>
+     <div class="price-row"><span class="price">${money(p.price)}</span><button class="add" data-product="${p.id}">+</button></div>
+    </div>
+   </article>`;
+ }).join(""):'<div class="empty">لا توجد منتجات في هذا القسم.</div>';
  document.querySelectorAll("[data-product]").forEach(function(b){b.onclick=function(){openProduct(b.dataset.product)}});
 }
 function openProduct(id){
