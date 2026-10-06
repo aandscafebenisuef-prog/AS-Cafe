@@ -7,21 +7,33 @@ const money=n=>Number(n||0).toFixed(2)+" EGP";
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2400)}
 function imgUrl(p){return p.image_url||"https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80"}
 function esc(s){return String(s||"").replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]})}
+async function loadQuery(label,query){
+ try{
+  const result=await Promise.race([
+   query,
+   new Promise(function(resolve){setTimeout(function(){resolve({data:null,error:{message:"انتهت مهلة تحميل "+label}})},10000)})
+  ]);
+  if(result.error)console.error(label,result.error);
+  return result;
+ }catch(error){console.error(label,error);return {data:null,error:error}}
+}
 async function init(){
  const results=await Promise.all([
-  db.from("cafe_settings").select("*").limit(1).maybeSingle(),
-  db.from("cafe_tables").select("*").eq("active",true).order("table_number"),
-  db.from("categories").select("*").eq("active",true).order("sort_order"),
-  db.from("products").select("*").eq("active",true).order("sort_order"),
-  db.from("modifier_groups").select("*").eq("active",true).order("name"),
-  db.from("modifiers").select("*").eq("active",true).order("sort_order"),
-  db.from("product_modifier_groups").select("*")
+  loadQuery("الإعدادات",db.from("cafe_settings").select("*").limit(1).maybeSingle()),
+  loadQuery("الطاولات",db.from("cafe_tables").select("id,table_number,active").eq("active",true)),
+  loadQuery("الأقسام",db.from("categories").select("*").eq("active",true).order("sort_order")),
+  loadQuery("المنتجات",db.from("products").select("*").eq("active",true).order("sort_order")),
+  loadQuery("مجموعات الإضافات",db.from("modifier_groups").select("*").eq("active",true).order("name")),
+  loadQuery("الإضافات",db.from("modifiers").select("*").eq("active",true).order("sort_order")),
+  loadQuery("روابط الإضافات",db.from("product_modifier_groups").select("*"))
  ]);
- if(results.some(function(x){return x.error}))return fail("تعذر تحميل بيانات المنيو");
  state.settings=results[0].data||{tax_percent:14,service_percent:8,cafe_name:"A&S Café"};
- state.tables=results[1].data||[];state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
+ state.tables=(results[1].data||[]).sort(function(a,b){return Number(a.table_number)-Number(b.table_number)});
+ state.categories=results[2].data||[];state.products=results[3].data||[];state.groups=results[4].data||[];state.modifiers=results[5].data||[];state.links=results[6].data||[];
  $("#taxRate").textContent=state.settings.tax_percent;$("#serviceRate").textContent=state.settings.service_percent;
  renderTables();renderCategories();renderProducts();updateCart();
+ const failed=results.filter(function(x){return x.error}).map(function(x){return x.error.message||"خطأ غير معروف"});
+ if(failed.length) toast("بعض البيانات لم تكتمل. جرّب تحديث الصفحة.");
 }
 function fail(m){console.error(m);$("#tables").innerHTML='<div class="error">'+m+"</div>"}
 function renderTables(){
