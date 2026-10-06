@@ -103,7 +103,7 @@ function renderProducts(){
     </div>
    </article>`;
  }).join(""):'<div class="empty">لا توجد منتجات في هذا القسم.</div>';
- document.querySelectorAll("[data-product]").forEach(function(b){b.onclick=function(){openProduct(b.dataset.product)}});
+ $("#products").onclick=function(e){const b=e.target.closest("[data-product]");if(!b)return;e.preventDefault();e.stopPropagation();openProduct(b.dataset.product)};
 }
 function openProduct(id){
  const p=state.products.find(function(x){return x.id===id}); if(!p)return;
@@ -115,7 +115,7 @@ function openProduct(id){
  $("#productModalBody").innerHTML='<div class="modal-product-img" style="background-image:url(\''+imgUrl(p).replace(/\\x27/g,"%27")+'\')"></div><span class="eyebrow">A&S SELECTION</span><h2>'+esc(p.name)+'</h2><p>'+esc(p.description||"اختيار فاخر من A&S Café.")+'</p>'+groupsHtml+qtyHtml+noteHtml+'<button class="primary-btn" id="addConfigured">إضافة للسلة · '+money(p.price)+"</button>";
  document.querySelectorAll(".mod-option").forEach(function(btn){btn.onclick=function(){const g=state.groups.find(function(x){return x.id===btn.dataset.group});if(g.max_select===1)document.querySelectorAll('[data-group="'+g.id+'"]').forEach(function(x){x.classList.remove("selected")});btn.classList.toggle("selected")}});
  let qty=1;if(!hasModifiers){$("#productQtyMinus").onclick=function(){qty=Math.max(1,qty-1);$("#productQty").textContent=qty};$("#productQtyPlus").onclick=function(){qty=Math.min(50,qty+1);$("#productQty").textContent=qty}}
- $("#addConfigured").onclick=function(){const selected=[...document.querySelectorAll(".mod-option.selected")].map(function(x){return state.modifiers.find(function(m){return m.id===x.dataset.mod})}).filter(Boolean);const total=Number(p.price)+selected.reduce(function(s,m){return s+Number(m.price_delta||0)},0);state.cart.push({key:crypto.randomUUID(),product:p,qty:hasModifiers?1:qty,mods:selected,unit:total,note:p.notes_enabled?(($("#productNote").val()||"").trim()):""});updateCart();closeModal("productModal");toast("تمت الإضافة إلى السلة")};
+ $("#addConfigured").onclick=function(){const selected=[...document.querySelectorAll(".mod-option.selected")].map(function(x){return state.modifiers.find(function(m){return m.id===x.dataset.mod})}).filter(Boolean);const total=Number(p.price)+selected.reduce(function(s,m){return s+Number(m.price_delta||0)},0);state.cart.push({key:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()),product:p,qty:hasModifiers?1:qty,mods:selected,unit:total,note:p.notes_enabled?(($("#productNote").val()||"").trim()):""});updateCart();closeModal("productModal");toast("تمت الإضافة إلى السلة")};
  $("#productModal").classList.remove("hidden");
 }
 function closeModal(id){$("#"+id).classList.add("hidden")}
