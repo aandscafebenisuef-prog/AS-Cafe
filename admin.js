@@ -1,6 +1,7 @@
 const SUPABASE_URL="https://hxkhhnrorjxrrqxevvcr.supabase.co";
 const SUPABASE_KEY=null;
 const ADMIN_GATEWAY=SUPABASE_URL+"/functions/v1/admin-gateway";
+async function getApiKey(){const r=await fetch("app.js?key="+Date.now(),{cache:"no-store"});const t=await r.text();const k=t.indexOf("SUPABASE_KEY");const q=t.indexOf(""",k+12);const e=t.indexOf(""",q+1);if(k<0||q<0||e<0)throw new Error("تعذر قراءة إعدادات الاتصال");return t.slice(q+1,e)}
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
 let profile=null,settings=null,currentView="orders",lockTimer=null;
 const $=s=>document.querySelector(s);
@@ -12,7 +13,7 @@ function fmt(d){return d?new Date(d).toLocaleString("ar-EG",{dateStyle:"short",t
 async function gateway(body){
   if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح"}};
   try{
-    const r=await fetch(ADMIN_GATEWAY,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({...body,token:ADMIN_TOKEN}),cache:"no-store"});
+    const r=await fetch(ADMIN_GATEWAY,{method:"POST",headers:{"apikey":await getApiKey(),"Content-Type":"application/json"},body:JSON.stringify({...body,token:ADMIN_TOKEN}),cache:"no-store"});
     let j=null;try{j=await r.json()}catch(_){}
     if(!r.ok)return{data:null,error:{message:j?.error||j?.reason||"تعذر الاتصال بخادم الإدارة",status:r.status}};
     return{data:j?.data??j?.ok??null,error:j?.error?{message:j.error}:null};
