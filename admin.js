@@ -10,12 +10,44 @@ async function getApiKey(){
   return match[1];
 }
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
-let profile=null,settings=null,currentView="orders",lockTimer=null;
+let profile=null,settings=null,currentView="orders",lockTimer=null,orderMonitorTimer=null,knownOrderIds=null,notificationPermission="default";
 const $=s=>document.querySelector(s);
 const money=n=>Number(n||0).toFixed(2)+" EGP";
 function toast(m){const e=$("#toast");if(!e)return;e.textContent=m;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
 function label(s){return({new:"جديد 🔔",confirmed:"تم التأكيد",preparing:"قيد التحضير",ready:"جاهز",served:"تم التقديم",completed:"مكتمل",cancelled:"ملغي"})[s]||s}
 function fmt(d){return d?new Date(d).toLocaleString("ar-EG",{dateStyle:"short",timeStyle:"short"}):"—"}
+function requestOrderNotifications(){
+ if(!("Notification" in window)){toast("المتصفح لا يدعم إشعارات الطلبات");return}
+ Notification.requestPermission().then(p=>{notificationPermission=p;updateNotificationButton();toast(p==="granted"?"تم تفعيل إشعارات الطلبات":p==="denied"?"الإشعارات مرفوضة من إعدادات المتصفح":"لم يتم تفعيل الإشعارات")}).catch(()=>toast("تعذر تفعيل الإشعارات"));
+}
+function updateNotificationButton(){
+ const b=$("#enableNotifications");if(!b)return;
+ if(!("Notification" in window)){b.textContent="الإشعارات غير مدعومة";b.disabled=true;return}
+ notificationPermission=Notification.permission;
+ b.textContent=notificationPermission==="granted"?"🔔 الإشعارات مفعّلة":notificationPermission==="denied"?"🔕 الإشعارات محظورة":"🔔 تفعيل إشعارات الطلبات";
+ b.classList.toggle("notifications-on",notificationPermission==="granted");
+}
+function announceNewOrder(order){
+ const number=order.order_number||"—";
+ toast("🔔 وصل طلب جديد #"+number);
+ try{if("Notification" in window&&Notification.permission==="granted"){const n=new Notification("طلب جديد — M&H",{body:"وصل طلب جديد رقم #"+number,tag:"mh-order-"+order.id,renotify:false});n.onclick=()=>{window.focus();currentView="orders";renderView();n.close()}}}catch(e){console.warn("Notification unavailable",e)}
+ try{const C=window.AudioContext||window.webkitAudioContext;if(C){const ctx=new C(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type="sine";osc.frequency.value=880;gain.gain.value=.12;osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.22);osc.onended=()=>ctx.close()}}catch(e){}
+}
+async function checkForNewOrders(initial=false){
+ const r=await db.from("orders").select("id,order_number,created_at,status").order("created_at",{ascending:false}).limit(20);
+ if(r.error||!Array.isArray(r.data))return;
+ const current=new Set(r.data.map(o=>String(o.id)));
+ if(knownOrderIds===null||initial){knownOrderIds=current;return}
+ const fresh=r.data.filter(o=>!knownOrderIds.has(String(o.id))).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+ knownOrderIds=current;
+ if(fresh.length){fresh.forEach(announceNewOrder);if(currentView==="orders")await orders()}
+}
+function startOrderMonitor(){
+ updateNotificationButton();
+ if(orderMonitorTimer)clearInterval(orderMonitorTimer);
+ checkForNewOrders(true).then(()=>{orderMonitorTimer=setInterval(()=>checkForNewOrders(false),8000)});
+}
+
 
 async function gateway(body){
   if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح."}};
@@ -116,7 +148,7 @@ async function enter(){
   settings=s.data||null;
   $("#staffName").textContent=profile.full_name||"مدير M&H";
   $("#roleName").textContent="OWNER";
-  $("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");renderView();
+  $("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");renderView();startOrderMonitor();
 }
 async function renderView(){
   const t={orders:"الطلبات",products:"المنتجات",categories:"الأقسام",tables:"الطاولات",settings:"الإعدادات"};
@@ -201,5 +233,7 @@ async function tables(){const r=await db.from("cafe_tables").select("*").order("
 async function settingsView(){if(!settings){const r=await db.from("cafe_settings").select("*").limit(1).maybeSingle();settings=r.data}if(!settings)return $("#view").innerHTML='<div class="notice">تعذر تحميل الإعدادات.</div>';$("#view").innerHTML='<div class="form-card"><h3>إعدادات الفاتورة</h3><form id="sf" class="form-grid"><label>اسم الكافيه<input name="cafe_name" value="'+(settings.cafe_name||"M&H")+'"></label><label>العملة<input name="currency" value="'+(settings.currency||"EGP")+'"></label><label>الضريبة %<input name="tax_percent" type="number" step=".01" value="'+settings.tax_percent+'"></label><label>الخدمة %<input name="service_percent" type="number" step=".01" value="'+settings.service_percent+'"></label><div><button class="primary-btn">حفظ</button></div></form></div>';$("#sf").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),r=await db.from("cafe_settings").update({cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent")),updated_at:new Date().toISOString()}).eq("id",settings.id);if(r.error)toast("تعذر الحفظ: "+r.error.message);else{toast("تم حفظ الإعدادات");settings={...settings,cafe_name:f.get("cafe_name"),currency:f.get("currency"),tax_percent:Number(f.get("tax_percent")),service_percent:Number(f.get("service_percent"))}}}}
 document.addEventListener("DOMContentLoaded",()=>{
   document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>{currentView=b.dataset.view;renderView()}));
+  const notificationButton=$("#enableNotifications");if(notificationButton)notificationButton.addEventListener("click",requestOrderNotifications);
+  updateNotificationButton();
   boot();
 });
