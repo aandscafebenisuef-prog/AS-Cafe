@@ -45,7 +45,7 @@ async function checkForNewOrders(initial=false){
 function startOrderMonitor(){
  updateNotificationButton();
  if(orderMonitorTimer)clearInterval(orderMonitorTimer);
- checkForNewOrders(true).then(()=>{orderMonitorTimer=setInterval(()=>checkForNewOrders(false),8000)});
+ checkForNewOrders(true).then(()=>{orderMonitorTimer=setInterval(()=>checkForNewOrders(false),3000)});
 }
 
 
