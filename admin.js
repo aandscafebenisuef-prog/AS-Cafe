@@ -10,6 +10,8 @@ async function getApiKey(){
   return match[1];
 }
 const ADMIN_TOKEN=(location.hash||"").replace(/^#/,"");
+let ADMIN_SESSION_ID=sessionStorage.getItem("mh_admin_session_id");
+if(!ADMIN_SESSION_ID){ADMIN_SESSION_ID=crypto.randomUUID();sessionStorage.setItem("mh_admin_session_id",ADMIN_SESSION_ID)}
 let profile=null,settings=null,currentView="orders",lockTimer=null,orderMonitorTimer=null,knownOrderIds=null,notificationPermission="default";
 const $=s=>document.querySelector(s);
 const money=n=>Number(n||0).toFixed(2)+" EGP";
@@ -58,7 +60,7 @@ async function gateway(body){
     const response=await fetch(ADMIN_GATEWAY,{
       method:"POST",
       headers:{"apikey":apiKey,"Content-Type":"application/json"},
-      body:JSON.stringify({...body,token:ADMIN_TOKEN}),
+      body:JSON.stringify({...body,token:ADMIN_TOKEN,sessionId:ADMIN_SESSION_ID}),
       cache:"no-store",
       signal:controller.signal
     });
@@ -124,15 +126,11 @@ async function boot(){
     }
     lockTimer=setInterval(async()=>{
       const heartbeat=await lock("heartbeat");
-      if(!heartbeat){
-        clearInterval(lockTimer);
-        lockTimer=null;
-        showMessage("انتهت جلسة الإدارة","تم فقدان جلسة الإدارة، ولذلك أُوقفت هذه الصفحة.");
-      }
+      if(!heartbeat)console.warn("M&H admin heartbeat failed; will retry without closing the page.");
     },7000);
     window.addEventListener("pagehide",()=>{
       try{
-        navigator.sendBeacon(ADMIN_GATEWAY,JSON.stringify({token:ADMIN_TOKEN,op:"lock",action:"release"}));
+        navigator.sendBeacon(ADMIN_GATEWAY,new Blob([JSON.stringify({token:ADMIN_TOKEN,sessionId:ADMIN_SESSION_ID,op:"lock",action:"release"})],{type:"application/json"}));
       }catch(_){}
     });
     await enter();
