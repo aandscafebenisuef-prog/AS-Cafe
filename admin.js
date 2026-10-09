@@ -52,7 +52,7 @@ function startOrderMonitor(){
 async function gateway(body){
   if(!ADMIN_TOKEN)return{data:null,error:{message:"رابط الإدارة غير صالح."}};
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),8000);
+  const timer=setTimeout(()=>controller.abort(),20000);
   try{
     const apiKey=await getApiKey();
     const response=await fetch(ADMIN_GATEWAY,{
